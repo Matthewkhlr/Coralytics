@@ -1,0 +1,75 @@
+import { useEffect, useRef } from "react";
+import * as THREE from "three";
+import { generateOrganism } from "../three/generateOrganism";
+
+const sampleOrganismData = {
+  accountAgeDays: 1240,
+  topics: [
+    { name: "tech", postVolume: 82, sentiment: 0.6 },
+    { name: "career", postVolume: 44, sentiment: 0.3 },
+    { name: "social", postVolume: 31, sentiment: -0.1 },
+  ],
+};
+
+export function OrganismViewport() {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#f9fbfc");
+
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+    camera.position.set(4, 3, 6);
+    camera.lookAt(0, 0.6, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    host.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight("#ffffff", 1.4);
+    const keyLight = new THREE.DirectionalLight("#ffffff", 2);
+    keyLight.position.set(3, 5, 4);
+    scene.add(ambientLight, keyLight);
+
+    const grid = new THREE.GridHelper(6, 12, "#cbd5db", "#e3e9ed");
+    grid.position.y = -1.2;
+    scene.add(grid);
+
+    const cleanupOrganism = generateOrganism(scene, sampleOrganismData);
+
+    const resize = () => {
+      const { clientWidth, clientHeight } = host;
+      camera.aspect = clientWidth / Math.max(clientHeight, 1);
+      camera.updateProjectionMatrix();
+      renderer.setSize(clientWidth, clientHeight);
+    };
+
+    const observer = new ResizeObserver(resize);
+    observer.observe(host);
+    resize();
+
+    let frameId = 0;
+    const render = () => {
+      frameId = window.requestAnimationFrame(render);
+      renderer.render(scene, camera);
+    };
+    render();
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      observer.disconnect();
+      cleanupOrganism?.();
+      renderer.dispose();
+      host.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div className="organism-viewport" ref={hostRef}>
+      <div className="viewport-label">Three.js scene ready</div>
+    </div>
+  );
+}
