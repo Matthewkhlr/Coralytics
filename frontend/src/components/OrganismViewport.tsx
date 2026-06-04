@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { generateOrganism } from "../three/generateOrganism";
+import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
 
 const sampleOrganismData = {
   accountAgeDays: 1240,
@@ -38,7 +39,7 @@ export function OrganismViewport() {
     grid.position.y = -1.2;
     scene.add(grid);
 
-    const cleanupOrganism = generateOrganism(scene, sampleOrganismData);
+    const { cube, cleanup } = generateOrganism(scene, sampleOrganismData);
 
     const resize = () => {
       const { clientWidth, clientHeight } = host;
@@ -52,8 +53,19 @@ export function OrganismViewport() {
     resize();
 
     let frameId = 0;
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enablePan = true;
+    //controls.enableRotate =true; //default
+    //controls.enableZoom = true; //default
+
     const render = () => {
       frameId = window.requestAnimationFrame(render);
+      controls.update();
+
+      //rotation logic
+      cube.rotation.x+=0.01;
+      cube.rotation.z+=0.01;
+
       renderer.render(scene, camera);
     };
     render();
@@ -61,7 +73,7 @@ export function OrganismViewport() {
     return () => {
       window.cancelAnimationFrame(frameId);
       observer.disconnect();
-      cleanupOrganism?.();
+      cleanup();
       renderer.dispose();
       host.removeChild(renderer.domElement);
     };
