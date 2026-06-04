@@ -2,8 +2,17 @@
 
 # dependencies
 /node_modules
+node_modules/
+frontend/node_modules/
 /.pnp
 .pnp.js
+
+# python
+.venv/
+venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
 
 # testing
 /coverage
