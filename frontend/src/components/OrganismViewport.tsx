@@ -3,9 +3,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { coralV1 } from "../three/generators/coralV1";
 import { coralV2 } from "../three/generators/coralV2";
+import { coralV3 } from "../three/generators/coralV3";
 import type { OrganismData, OrganismGenerator } from "../three/organismTypes";
 
-const useGenerator: OrganismGenerator = coralV2;
+const useGenerator: OrganismGenerator = coralV3;
 
 const sampleOrganismData: OrganismData = {
   accountAgeDays: 1240,
