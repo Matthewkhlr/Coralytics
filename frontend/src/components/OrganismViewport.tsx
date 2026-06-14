@@ -1,9 +1,13 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { generateOrganism } from "../three/generateOrganism";
-import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { coralV1 } from "../three/generators/coralV1";
+import { coralV2 } from "../three/generators/coralV2";
+import type { OrganismData, OrganismGenerator } from "../three/organismTypes";
 
-const sampleOrganismData = {
+const useGenerator: OrganismGenerator = coralV2;
+
+const sampleOrganismData: OrganismData = {
   accountAgeDays: 1240,
   topics: [
     { name: "tech", postVolume: 82, sentiment: 0.6 },
@@ -39,7 +43,7 @@ export function OrganismViewport() {
     grid.position.y = -1.2;
     scene.add(grid);
 
-    const { cube, cleanup } = generateOrganism(scene, sampleOrganismData);
+    const { coral, cleanup } = useGenerator(scene, sampleOrganismData);
 
     const resize = () => {
       const { clientWidth, clientHeight } = host;
@@ -63,8 +67,8 @@ export function OrganismViewport() {
       controls.update();
 
       //rotation logic
-      cube.rotation.x+=0.01;
-      cube.rotation.z+=0.01;
+      coral.rotation.y += 0.01;
+      //coral.rotation.y+=0.01;
 
       renderer.render(scene, camera);
     };
