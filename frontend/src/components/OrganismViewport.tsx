@@ -8,6 +8,13 @@ import type { OrganismData, OrganismGenerator } from "../three/organismTypes";
 
 const useGenerator: OrganismGenerator = coralV3;
 
+const clock = new THREE.Clock();
+
+const pulseSpeed = 1.2; 
+const pulseAmplitude = 0.3; 
+
+const bendAmountMax = 0.3;
+
 const sampleOrganismData: OrganismData = {
   accountAgeDays: 1240,
   topics: [
@@ -68,9 +75,47 @@ export function OrganismViewport() {
       controls.update();
 
       //rotation logic
-      coral.rotation.y += 0.01;
+      //coral.rotation.y += 0.01;
       //coral.rotation.y+=0.01;
 
+      const elapsed = clock.getElapsedTime();
+      const pulse = (Math.sin(elapsed * pulseSpeed) + 1) / 2; 
+
+      //pulse tentacles
+      const ud = (coral as any).userData;
+      const tentacleData = ud?.tentacleData as
+        | { geometry: THREE.BufferGeometry; original: Float32Array; angle: number }[]
+        | undefined;
+
+      if (tentacleData && ud.tentacleHeight) {
+        const tentacleHeight = ud.tentacleHeight as number;
+        for (const { geometry, original, angle } of tentacleData) {
+          const pos = geometry.attributes.position as THREE.BufferAttribute;
+          const vertex =  new THREE.Vector3();
+
+          for (let i=0; i<pos.count; i++) {
+            //start from original (straight) position
+            vertex.fromArray(original, i*3);
+
+            //y from bottom to top
+            const t = (vertex.y + tentacleHeight / 2) / tentacleHeight; //0 at base, 1 at tip
+
+            //bend stronger near tip, scaled by pulse
+            const bend = bendAmountMax * pulse * t;
+
+            //outward directon in XZ based on ring angle
+            vertex.x += Math.cos(angle) * bend;
+            vertex.z += Math.sin(angle) * bend;
+            
+            pos.setXYZ(i, vertex.x, vertex.y, vertex.z);
+
+          }
+          pos.needsUpdate = true;
+          geometry.computeVertexNormals();
+        }
+      }
+
+      controls.update();
       renderer.render(scene, camera);
     };
     render();
