@@ -43,3 +43,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Coralytics ingestion output (contains real personal data - never commit)
+backend/ingest_output/
+backend/real_output/
+backend/*_output/
+ingest_output/
+real_output/
+*_output/
+
+# Real social media export data (if ever copied into the repo)
+your_instagram_activity/
+*_activity/
+*.zip
