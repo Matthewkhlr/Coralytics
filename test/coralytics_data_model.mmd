@@ -1,0 +1,54 @@
+erDiagram
+    direction TB
+
+    user ||--o{ upload : owns
+    user ||--o{ analysis : owns
+    upload ||--o{ post : contains
+    analysis ||--o{ analysis_upload : sources
+    upload ||--o{ analysis_upload : feeds
+
+    user {
+        string user_id PK "Firebase Auth UID and Firestore path root"
+    }
+
+    upload {
+        string upload_id PK "UUID for one ingested export batch"
+        string user_id FK "Owner linked to user"
+        string platform "instagram linkedin reddit sample or mixed"
+        string filename "Original uploaded file name"
+        int post_count "Count of normalized items saved"
+        int comment_count "Count of comments and replies"
+        string created_at "ISO 8601 UTC when upload was saved"
+        string parsed_at "ISO 8601 UTC when ingestion finished"
+        string ingest_report "Parse report with files list and warnings"
+    }
+
+    post {
+        string post_id PK "NormalizedPost id used as Firestore document id"
+        string upload_id FK "Parent upload this post came from"
+        string user_id FK "Owner denormalized from path userId"
+        string platform "instagram linkedin reddit or sample"
+        string content "Caption or post text up to 5000 characters"
+        string created_at "ISO 8601 when content was originally posted"
+        string post_type "post comment share reply or unknown"
+        int engagement "Likes upvotes or reactions if available"
+        string source_context "Extra context such as subreddit name"
+        string url "Permalink to original content if available"
+        string hashtags "JSON array of hashtags from content"
+    }
+
+    analysis {
+        string analysis_id PK "UUID for one persona or NLP analysis run"
+        string user_id FK "Owner linked to user"
+        int post_count "Number of posts included in analysis"
+        string topics "TF-IDF topic clusters stub empty today"
+        string sentiment_summary "Aggregated VADER scores stub null today"
+        string organism_data "3D coral payload stub today"
+        string created_at "ISO 8601 UTC when analysis was created"
+        string updated_at "ISO 8601 UTC when analysis was last updated"
+    }
+
+    analysis_upload {
+        string analysis_id FK "Analysis that used this upload as input"
+        string upload_id FK "Upload whose posts were read for analysis"
+    }

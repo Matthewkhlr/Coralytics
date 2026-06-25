@@ -1,5 +1,19 @@
 import os
 from functools import lru_cache
+from pathlib import Path
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def _resolve_credentials_path(path: str | None) -> str | None:
+    if not path:
+        return None
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = _repo_root() / candidate
+    return str(candidate.resolve())
 
 
 class Settings:
@@ -12,7 +26,10 @@ class Settings:
 
     def __init__(self) -> None:
         self.firebase_project_id = os.getenv("FIREBASE_PROJECT_ID", "coralytics-dev")
-        self.google_application_credentials = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        raw_credentials = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        self.google_application_credentials = _resolve_credentials_path(raw_credentials)
+        if self.google_application_credentials:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.google_application_credentials
         origins = os.getenv("CORS_ORIGINS", "http://localhost:5173")
         self.cors_origins = [origin.strip() for origin in origins.split(",") if origin.strip()]
         self.max_upload_size_bytes = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", str(25 * 1024 * 1024)))
@@ -20,6 +37,13 @@ class Settings:
     @property
     def use_emulators(self) -> bool:
         return bool(os.getenv("FIRESTORE_EMULATOR_HOST"))
+
+    @property
+    def allow_seed_endpoint(self) -> bool:
+        """Allow POST /seed/sample-data (emulator by default, or SEED_ENDPOINT_ENABLED=1)."""
+        if self.use_emulators:
+            return True
+        return os.getenv("SEED_ENDPOINT_ENABLED", "").strip().lower() in {"1", "true", "yes"}
 
 
 @lru_cache
