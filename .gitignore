@@ -39,7 +39,6 @@ ui-debug.log
 # local env files
 .env*.local
 .env
-backend/.env
 
 # firebase service account keys (never commit)
 service-account*.json

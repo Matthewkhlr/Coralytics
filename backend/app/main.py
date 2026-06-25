@@ -1,16 +1,17 @@
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.firebase import init_firebase
-from app.services import firestore_service, parser_service
+from app.services import firestore_service, ingestion_service, seed_service
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 
 class Post(BaseModel):
@@ -48,8 +49,65 @@ app.add_middleware(
 def _posts_from_uploads(user_id: str, upload_ids: list[str]) -> list[dict[str, object]]:
     posts: list[dict[str, object]] = []
     for upload_id in upload_ids:
-        posts.extend(firestore_service.list_upload_posts(user_id, upload_id))
+        batch, _ = firestore_service.list_upload_posts(user_id, upload_id, limit=10_000)
+        posts.extend(batch)
     return posts
+
+
+ALLOWED_FIXTURES = frozenset({"instagram_posts_1.json", "linkedin_shares.csv"})
+
+
+def _fixture_search_dirs() -> list[Path]:
+    backend_dir = Path(__file__).resolve().parent
+    repo_root = backend_dir.parent.parent
+    return [
+        backend_dir / "ingestion" / "sample_data",
+        repo_root / "test" / "fixtures",
+    ]
+
+
+def _resolve_fixture_path(fixture_name: str) -> Path:
+    safe_name = Path(fixture_name).name
+    if safe_name not in ALLOWED_FIXTURES:
+        raise HTTPException(status_code=400, detail=f"Unknown fixture: {fixture_name}")
+
+    for directory in _fixture_search_dirs():
+        candidate = directory / safe_name
+        if candidate.is_file():
+            return candidate
+
+    raise HTTPException(status_code=404, detail=f"Fixture not found: {safe_name}")
+
+
+def _ingest_and_save_upload(
+    user_id: str,
+    content: bytes,
+    filename: str,
+    platform: str | None = None,
+) -> dict[str, object]:
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    if len(content) > settings.max_upload_size_bytes:
+        limit_mb = settings.max_upload_size_bytes // (1024 * 1024)
+        raise HTTPException(status_code=400, detail=f"File exceeds {limit_mb} MB limit")
+
+    safe_filename = filename.replace("/", "_").replace("\\", "_")
+
+    try:
+        posts, ingest_report = ingestion_service.ingest_upload(content, safe_filename)
+        resolved_platform = (platform or ingestion_service.derive_platform(posts)).lower().strip()
+        return firestore_service.save_upload_with_posts(
+            user_id=user_id,
+            filename=safe_filename,
+            posts=posts,
+            platform=resolved_platform,
+            ingest_report=ingest_report,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
 
 
 @app.get("/health")
@@ -64,36 +122,50 @@ def health() -> dict[str, str | bool]:
 @app.post("/uploads")
 async def upload_export(
     user_id: str = Form(...),
-    platform: str = Form(...),
     file: UploadFile = File(...),
+    platform: str | None = Form(default=None),
 ) -> dict[str, object]:
-    """Parse a platform export in memory and persist posts to Firestore."""
+    """Ingest a platform export (.zip, .json, or .csv) and persist normalized posts to Firestore."""
     content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    filename = file.filename or "export"
+    return _ingest_and_save_upload(user_id, content, filename, platform)
 
-    if len(content) > settings.max_upload_size_bytes:
-        limit_mb = settings.max_upload_size_bytes // (1024 * 1024)
-        raise HTTPException(status_code=400, detail=f"File exceeds {limit_mb} MB limit")
+
+@app.post("/seed/sample-data")
+async def seed_sample_data(
+    user_id: str = Form(default="demo-user"),
+    run_analysis: bool = Form(default=True),
+) -> dict[str, object]:
+    """Ingest all bundled sample exports and optionally create a stub analysis."""
+    if not settings.allow_seed_endpoint:
+        raise HTTPException(
+            status_code=403,
+            detail="Seed endpoint disabled. Use emulators, set SEED_ENDPOINT_ENABLED=1, or run: python -m app.seed",
+        )
 
     try:
-        posts = parser_service.parse_export(
-            platform=platform,
-            content=content,
-            filename=file.filename or "export",
-        )
-        metadata = firestore_service.save_upload_with_posts(
-            user_id=user_id,
-            platform=platform.lower().strip(),
-            filename=(file.filename or "export").replace("/", "_").replace("\\", "_"),
-            posts=posts,
-        )
-    except ValueError as exc:
+        return seed_service.seed_sample_data(user_id, run_analysis=run_analysis)
+    except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Seed failed: {exc}") from exc
 
-    return metadata
+
+@app.post("/uploads/fixture")
+async def upload_fixture(
+    user_id: str = Form(...),
+    fixture_name: str = Form("instagram_posts_1.json"),
+    platform: str | None = Form(default=None),
+) -> dict[str, object]:
+    """Ingest a bundled sample export from disk. Allowed only when using Firebase emulators."""
+    if not settings.use_emulators:
+        raise HTTPException(
+            status_code=403,
+            detail="Fixture uploads are only allowed when FIRESTORE_EMULATOR_HOST is set",
+        )
+
+    fixture_path = _resolve_fixture_path(fixture_name)
+    return _ingest_and_save_upload(user_id, fixture_path.read_bytes(), fixture_path.name, platform)
 
 
 @app.get("/uploads/{user_id}")
@@ -117,16 +189,26 @@ def get_user_upload(user_id: str, upload_id: str) -> dict[str, object]:
 
 
 @app.get("/uploads/{user_id}/{upload_id}/posts")
-def get_user_upload_posts(user_id: str, upload_id: str) -> dict[str, list[dict[str, object]]]:
+def get_user_upload_posts(
+    user_id: str,
+    upload_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    cursor: str | None = Query(default=None),
+) -> dict[str, object]:
     """List parsed posts for a single upload."""
     try:
-        posts = firestore_service.list_upload_posts(user_id, upload_id)
+        posts, next_cursor = firestore_service.list_upload_posts(
+            user_id,
+            upload_id,
+            limit=limit,
+            start_after=cursor,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to list posts: {exc}") from exc
 
-    return {"posts": posts}
+    return {"posts": posts, "next_cursor": next_cursor}
 
 
 @app.post("/analyze")

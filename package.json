@@ -4,7 +4,9 @@
     "firebase:emulators": "firebase emulators:start --only firestore",
     "firebase:emulators:all": "firebase emulators:start --only firestore,hosting,auth",
     "firebase:deploy:rules": "firebase deploy --only firestore:rules",
-    "firebase:deploy:hosting": "firebase deploy --only hosting"
+    "firebase:deploy:hosting": "firebase deploy --only hosting",
+    "seed": "cd backend && python -m app.seed",
+    "seed:cloud": "cd backend && python -m app.seed --cloud"
   },
   "devDependencies": {
     "firebase-tools": "^15.21.0"

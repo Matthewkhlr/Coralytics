@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -5,6 +6,7 @@ from typing import Any
 from app.firebase import get_firestore_client
 
 BATCH_SIZE = 400
+_DOC_ID_PATTERN = re.compile(r"[^\w\-.:]+")
 
 
 def _uploads_collection(user_id: str):
@@ -19,6 +21,13 @@ def _posts_collection(user_id: str, upload_id: str):
     return _uploads_collection(user_id).document(upload_id).collection("posts")
 
 
+def _sanitize_doc_id(raw_id: str, fallback: str) -> str:
+    doc_id = _DOC_ID_PATTERN.sub("_", raw_id).strip("._")
+    if not doc_id:
+        return fallback
+    return doc_id[:1500]
+
+
 def _commit_batches(user_id: str, upload_id: str, posts: list[dict[str, Any]]) -> None:
     db = get_firestore_client()
 
@@ -27,21 +36,25 @@ def _commit_batches(user_id: str, upload_id: str, posts: list[dict[str, Any]]) -
         chunk = posts[index : index + BATCH_SIZE]
 
         for offset, post in enumerate(chunk):
-            post_id = f"{index + offset:06d}"
-            batch.set(_posts_collection(user_id, upload_id).document(post_id), post)
+            fallback_id = f"{index + offset:06d}"
+            doc_id = _sanitize_doc_id(str(post.get("id", "")), fallback_id)
+            batch.set(_posts_collection(user_id, upload_id).document(doc_id), post)
 
         batch.commit()
 
 
 def save_upload_with_posts(
     user_id: str,
-    platform: str,
     filename: str,
     posts: list[dict[str, Any]],
+    *,
+    platform: str = "mixed",
+    ingest_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Persist upload metadata and parsed posts in Firestore."""
+    """Persist upload metadata, ingest report, and parsed posts in Firestore."""
     upload_id = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
+    comment_types = {"comment", "reply"}
 
     metadata: dict[str, Any] = {
         "upload_id": upload_id,
@@ -49,8 +62,10 @@ def save_upload_with_posts(
         "platform": platform,
         "filename": filename,
         "post_count": len(posts),
+        "comment_count": sum(1 for post in posts if post.get("post_type") in comment_types),
         "created_at": now,
         "parsed_at": now,
+        "ingest_report": ingest_report or {},
     }
 
     _uploads_collection(user_id).document(upload_id).set(metadata)
@@ -79,11 +94,27 @@ def list_uploads(user_id: str) -> list[dict[str, Any]]:
     return [doc.to_dict() for doc in snapshots if doc.exists]
 
 
-def list_upload_posts(user_id: str, upload_id: str) -> list[dict[str, Any]]:
-    """List parsed posts for an upload."""
+def list_upload_posts(
+    user_id: str,
+    upload_id: str,
+    *,
+    limit: int = 100,
+    start_after: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """List parsed posts for an upload with simple cursor pagination."""
     get_upload_metadata(user_id, upload_id)
-    snapshots = _posts_collection(user_id, upload_id).order_by("__name__").stream()
-    return [doc.to_dict() for doc in snapshots if doc.exists]
+
+    collection = _posts_collection(user_id, upload_id)
+    query = collection.order_by("__name__")
+    if start_after:
+        start_doc = collection.document(start_after).get()
+        if start_doc.exists:
+            query = query.start_after(start_doc)
+
+    snapshots = list(query.limit(limit + 1).stream())
+    posts = [doc.to_dict() for doc in snapshots[:limit] if doc.exists]
+    next_cursor = snapshots[limit].id if len(snapshots) > limit else None
+    return posts, next_cursor
 
 
 def save_analysis(
