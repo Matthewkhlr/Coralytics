@@ -1,0 +1,835 @@
+{
+  "info": {
+    "_postman_id": "coralytics-api-collection",
+    "name": "Coralytics API",
+    "description": "Postman collection for the Coralytics FastAPI backend.\n\n## Quick start\n1. Repo root: `npm run firebase:emulators`\n2. Backend: `cd backend && uvicorn app.main:app --reload`\n3. Import this collection into Postman\n4. Run folder **03 - Frontend flow** or **00 - Seed demo data**\n5. Frontend dev server proxies `/api` → `http://localhost:8000` (see `VITE_API_URL` in `.env`)\n\n## Variables\n- `baseUrl` — http://localhost:8000\n- `userId` — test user id (default: demo-user, matches `VITE_DEMO_USER_ID`)\n- `uploadId` / `analysisId` — set automatically by seed/upload/analyze requests\n\n## Frontend sidebar endpoints\nThe React app calls:\n- `GET /uploads/{user_id}` — export history sidebar\n- `GET /analyses/{user_id}` — dashboard metrics + coral\n- `POST /uploads` — import page file upload\n- `POST /analyze` — analyze after upload\n\n## Seeding\n**POST /seed/sample-data** ingests every file in `backend/app/ingestion/sample_data/` and creates a stub analysis. Works with emulators; for cloud set `SEED_ENDPOINT_ENABLED=1` or use `python -m app.seed`.\n\n## Troubleshooting 500 on GET /uploads\n- Ensure Firestore emulator is running (`npm run firebase:emulators`)\n- Ensure `.env` has `FIRESTORE_EMULATOR_HOST=localhost:8080`\n- Restart uvicorn after changing `.env`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" },
+    { "key": "userId", "value": "demo-user" },
+    { "key": "uploadId", "value": "" },
+    { "key": "analysisId", "value": "" },
+    { "key": "postCursor", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "00 - Seed demo data",
+      "description": "One-shot seed: all sample_data files (Instagram, LinkedIn, Reddit, generic) → Firestore upload + posts + stub analysis.",
+      "item": [
+        {
+          "name": "POST /seed/sample-data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('upload_id returned', () => pm.expect(body.upload_id).to.be.a('string').and.not.empty);",
+                  "pm.test('analysis_id returned', () => pm.expect(body.analysis_id).to.be.a('string').and.not.empty);",
+                  "pm.test('post_count > 0', () => pm.expect(body.post_count).to.be.above(0));",
+                  "pm.test('mixed or single platform', () => pm.expect(body.platform).to.be.a('string').and.not.empty);",
+                  "pm.test('ingest_report has files', () => pm.expect(body.ingest_report.files).to.be.an('array').that.is.not.empty);",
+                  "pm.collectionVariables.set('uploadId', body.upload_id);",
+                  "pm.collectionVariables.set('analysisId', body.analysis_id);",
+                  "pm.collectionVariables.set('expectedPostCount', String(body.post_count));",
+                  "console.log('Seeded', body.post_count, 'posts | upload:', body.upload_id, '| analysis:', body.analysis_id);",
+                  "console.log('View in Emulator UI: http://localhost:4000');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                { "key": "run_analysis", "value": "true", "type": "text" }
+              ]
+            },
+            "url": "{{baseUrl}}/seed/sample-data",
+            "description": "Loads all files from backend/app/ingestion/sample_data/ as a zip, ingests them, and creates a stub analysis. No file attachment needed."
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 - Full pipeline",
+      "description": "Run this folder top-to-bottom with Collection Runner to verify: health → ingest → Firestore upload/posts → analyze → read analysis.",
+      "item": [
+        {
+          "name": "1. GET /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('status is ok', () => pm.expect(body.status).to.eql('ok'));",
+                  "pm.test('firebase project is set', () => pm.expect(body.firebase_project).to.be.a('string').and.not.empty);",
+                  "pm.test('emulator flag is boolean', () => pm.expect(body.use_emulators).to.be.a('boolean'));",
+                  "console.log('Firebase project:', body.firebase_project, '| emulators:', body.use_emulators);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "2. POST /uploads/fixture (instagram)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('upload_id returned', () => pm.expect(body.upload_id).to.be.a('string').and.not.empty);",
+                  "pm.test('post_count > 0', () => pm.expect(body.post_count).to.be.above(0));",
+                  "pm.test('ingest_report present', () => pm.expect(body.ingest_report).to.be.an('object'));",
+                  "pm.test('platform detected', () => pm.expect(body.platform).to.be.a('string').and.not.empty);",
+                  "pm.collectionVariables.set('uploadId', body.upload_id);",
+                  "console.log('uploadId:', body.upload_id, '| posts:', body.post_count);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                { "key": "fixture_name", "value": "instagram_posts_1.json", "type": "text" }
+              ]
+            },
+            "url": "{{baseUrl}}/uploads/fixture",
+            "description": "Loads sample data from the server (emulator mode only). No file attachment needed in Postman."
+          }
+        },
+        {
+          "name": "3. GET /uploads/{user_id}",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('uploadId')) {",
+                  "    throw new Error('uploadId is empty. Run step 2 first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const uploadId = pm.collectionVariables.get('uploadId');",
+                  "pm.test('uploads is array', () => pm.expect(body.uploads).to.be.an('array'));",
+                  "pm.test('upload appears in list', () => {",
+                  "    const found = body.uploads.some(u => u.upload_id === uploadId);",
+                  "    pm.expect(found).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/uploads/{{userId}}"
+          }
+        },
+        {
+          "name": "4. GET /uploads/{user_id}/{upload_id}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('upload_id matches', () => pm.expect(body.upload_id).to.eql(pm.collectionVariables.get('uploadId')));",
+                  "pm.test('ingest_report has files', () => pm.expect(body.ingest_report.files).to.be.an('array'));",
+                  "pm.test('comment_count is number', () => pm.expect(body.comment_count).to.be.a('number'));",
+                  "pm.collectionVariables.set('expectedPostCount', String(body.post_count));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/uploads/{{userId}}/{{uploadId}}"
+          }
+        },
+        {
+          "name": "5. GET /uploads/{user_id}/{upload_id}/posts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('posts is array', () => pm.expect(body.posts).to.be.an('array'));",
+                  "pm.test('posts not empty', () => pm.expect(body.posts.length).to.be.above(0));",
+                  "const first = body.posts[0];",
+                  "pm.test('normalized post shape', () => {",
+                  "    pm.expect(first).to.have.property('id');",
+                  "    pm.expect(first).to.have.property('platform');",
+                  "    pm.expect(first).to.have.property('content');",
+                  "    pm.expect(first).to.have.property('post_type');",
+                  "});",
+                  "if (body.next_cursor) {",
+                  "    pm.collectionVariables.set('postCursor', body.next_cursor);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/uploads/{{userId}}/{{uploadId}}/posts?limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["uploads", "{{userId}}", "{{uploadId}}", "posts"],
+              "query": [{ "key": "limit", "value": "100" }]
+            }
+          }
+        },
+        {
+          "name": "6. POST /analyze (from upload_ids)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('uploadId')) {",
+                  "    throw new Error('uploadId is empty. Run step 2 first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('analysis_id returned', () => pm.expect(body.analysis_id).to.be.a('string').and.not.empty);",
+                  "pm.test('post_count > 0', () => pm.expect(body.post_count).to.be.above(0));",
+                  "pm.test('upload_ids linked', () => {",
+                  "    pm.expect(body.upload_ids).to.be.an('array').that.includes(pm.collectionVariables.get('uploadId'));",
+                  "});",
+                  "pm.test('organism_data stub present', () => pm.expect(body.organism_data).to.be.an('object'));",
+                  "const expected = pm.collectionVariables.get('expectedPostCount');",
+                  "if (expected) {",
+                  "    pm.test('post_count matches upload', () => pm.expect(String(body.post_count)).to.eql(expected));",
+                  "}",
+                  "pm.collectionVariables.set('analysisId', body.analysis_id);",
+                  "console.log('analysisId:', body.analysis_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"upload_ids\": [\"{{uploadId}}\"],\n  \"persist\": true\n}"
+            },
+            "url": "{{baseUrl}}/analyze"
+          }
+        },
+        {
+          "name": "7. GET /analyses/{user_id}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const analysisId = pm.collectionVariables.get('analysisId');",
+                  "pm.test('analyses is array', () => pm.expect(body.analyses).to.be.an('array'));",
+                  "pm.test('analysis appears in list', () => {",
+                  "    const found = body.analyses.some(a => a.analysis_id === analysisId);",
+                  "    pm.expect(found).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/analyses/{{userId}}"
+          }
+        },
+        {
+          "name": "8. GET /analyses/{user_id}/{analysis_id}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('analysis_id matches', () => pm.expect(body.analysis_id).to.eql(pm.collectionVariables.get('analysisId')));",
+                  "pm.test('user_id matches', () => pm.expect(body.user_id).to.eql(pm.collectionVariables.get('userId')));",
+                  "pm.test('topics array present', () => pm.expect(body.topics).to.be.an('array'));",
+                  "console.log('Pipeline complete.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/analyses/{{userId}}/{{analysisId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Frontend flow (Sprint 2)",
+      "description": "Mirrors the React app: health → seed → list uploads (sidebar) → list analyses (dashboard) → optional re-analyze. Run after emulators + uvicorn are up.",
+      "item": [
+        {
+          "name": "1. GET /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('status is ok', () => pm.expect(body.status).to.eql('ok'));",
+                  "console.log('emulators:', body.use_emulators, '| project:', body.firebase_project);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "2. POST /seed/sample-data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('uploadId', body.upload_id);",
+                  "pm.collectionVariables.set('analysisId', body.analysis_id);",
+                  "pm.test('upload_id set', () => pm.expect(body.upload_id).to.be.a('string').and.not.empty);",
+                  "console.log('Seeded upload:', body.upload_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                { "key": "run_analysis", "value": "true", "type": "text" }
+              ]
+            },
+            "url": "{{baseUrl}}/seed/sample-data"
+          }
+        },
+        {
+          "name": "3. GET /uploads/{user_id} (sidebar)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) {",
+                  "    console.error('Response:', pm.response.text());",
+                  "    return;",
+                  "}",
+                  "const body = pm.response.json();",
+                  "pm.test('uploads is array', () => pm.expect(body.uploads).to.be.an('array'));",
+                  "pm.test('at least one upload after seed', () => pm.expect(body.uploads.length).to.be.above(0));",
+                  "const first = body.uploads[0];",
+                  "pm.test('upload shape', () => {",
+                  "    pm.expect(first).to.have.property('upload_id');",
+                  "    pm.expect(first).to.have.property('filename');",
+                  "    pm.expect(first).to.have.property('platform');",
+                  "    pm.expect(first).to.have.property('post_count');",
+                  "    pm.expect(first).to.have.property('created_at');",
+                  "});",
+                  "if (!pm.collectionVariables.get('uploadId') && first) {",
+                  "    pm.collectionVariables.set('uploadId', first.upload_id);",
+                  "}",
+                  "console.log('Uploads:', body.uploads.length, '| latest:', first?.filename);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/uploads/{{userId}}",
+            "description": "Same call the frontend sidebar uses (Export history)."
+          }
+        },
+        {
+          "name": "4. GET /analyses/{user_id} (dashboard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) {",
+                  "    console.error('Response:', pm.response.text());",
+                  "    return;",
+                  "}",
+                  "const body = pm.response.json();",
+                  "pm.test('analyses is array', () => pm.expect(body.analyses).to.be.an('array'));",
+                  "pm.test('at least one analysis after seed', () => pm.expect(body.analyses.length).to.be.above(0));",
+                  "const first = body.analyses[0];",
+                  "pm.test('analysis shape', () => {",
+                  "    pm.expect(first).to.have.property('analysis_id');",
+                  "    pm.expect(first).to.have.property('post_count');",
+                  "    pm.expect(first).to.have.property('organism_data');",
+                  "});",
+                  "pm.collectionVariables.set('analysisId', first.analysis_id);",
+                  "console.log('Analyses:', body.analyses.length, '| latest posts:', first?.post_count);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/analyses/{{userId}}",
+            "description": "Same call the dashboard uses for metrics and coral data."
+          }
+        },
+        {
+          "name": "5. POST /analyze (re-run from upload)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('uploadId')) {",
+                  "    throw new Error('uploadId empty — run seed or upload first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('analysisId', body.analysis_id);",
+                  "pm.test('post_count > 0', () => pm.expect(body.post_count).to.be.above(0));",
+                  "console.log('New analysis:', body.analysis_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"upload_ids\": [\"{{uploadId}}\"],\n  \"persist\": true\n}"
+            },
+            "url": "{{baseUrl}}/analyze",
+            "description": "Same as the Import page Analyze now button."
+          }
+        },
+        {
+          "name": "6. POST /uploads (file upload)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) {",
+                  "    console.error('Response:', pm.response.text());",
+                  "    return;",
+                  "}",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('uploadId', body.upload_id);",
+                  "pm.test('upload_id returned', () => pm.expect(body.upload_id).to.be.a('string').and.not.empty);",
+                  "pm.test('ingest_report present', () => pm.expect(body.ingest_report).to.be.an('object'));",
+                  "console.log('Uploaded:', body.filename, '| posts:', body.post_count);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                {
+                  "key": "file",
+                  "description": "Select test/fixtures/instagram_posts_1.json in Postman Body",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/uploads",
+            "description": "Multipart upload — same as the /upload drag-and-drop page. Select a file in Body before sending."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Individual requests",
+      "item": [
+        {
+          "name": "Health",
+          "item": [
+            {
+              "name": "GET /health",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/health"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Uploads",
+          "item": [
+            {
+              "name": "POST /seed/sample-data",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('uploadId', body.upload_id);",
+                      "    pm.collectionVariables.set('analysisId', body.analysis_id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                    { "key": "run_analysis", "value": "true", "type": "text" }
+                  ]
+                },
+                "url": "{{baseUrl}}/seed/sample-data",
+                "description": "Seed all bundled sample exports + stub analysis."
+              }
+            },
+            {
+              "name": "POST /uploads/fixture (instagram)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    pm.collectionVariables.set('uploadId', pm.response.json().upload_id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                    { "key": "fixture_name", "value": "instagram_posts_1.json", "type": "text" }
+                  ]
+                },
+                "url": "{{baseUrl}}/uploads/fixture"
+              }
+            },
+            {
+              "name": "POST /uploads/fixture (linkedin)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    pm.collectionVariables.set('uploadId', pm.response.json().upload_id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                    { "key": "fixture_name", "value": "linkedin_shares.csv", "type": "text" }
+                  ]
+                },
+                "url": "{{baseUrl}}/uploads/fixture"
+              }
+            },
+            {
+              "name": "POST /uploads (file upload)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('uploadId', body.upload_id);",
+                      "    console.log('uploadId:', body.upload_id, '| posts:', body.post_count);",
+                      "} else {",
+                      "    console.error(pm.response.code, pm.response.text());",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                    {
+                      "key": "file",
+                      "description": "Select test/fixtures/instagram_posts_1.json manually in Postman",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                },
+                "url": "{{baseUrl}}/uploads",
+                "description": "Real multipart upload. Postman does not keep file paths on import — click Select Files in Body."
+              }
+            },
+            {
+              "name": "GET /uploads/{user_id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    pm.test('uploads is array', () => pm.expect(body.uploads).to.be.an('array'));",
+                      "    if (body.uploads.length > 0 && !pm.collectionVariables.get('uploadId')) {",
+                      "        pm.collectionVariables.set('uploadId', body.uploads[0].upload_id);",
+                      "    }",
+                      "    console.log('uploads:', body.uploads.length);",
+                      "} else {",
+                      "    console.error(pm.response.code, pm.response.text());",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/uploads/{{userId}}"
+              }
+            },
+            {
+              "name": "GET /uploads/{user_id}/{upload_id}",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/uploads/{{userId}}/{{uploadId}}"
+              }
+            },
+            {
+              "name": "GET /uploads/{user_id}/{upload_id}/posts",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/uploads/{{userId}}/{{uploadId}}/posts?limit=100&cursor={{postCursor}}",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["uploads", "{{userId}}", "{{uploadId}}", "posts"],
+                  "query": [
+                    { "key": "limit", "value": "100" },
+                    { "key": "cursor", "value": "{{postCursor}}", "disabled": true }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Analyses",
+          "item": [
+            {
+              "name": "POST /analyze (from upload_ids)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    pm.collectionVariables.set('analysisId', pm.response.json().analysis_id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"upload_ids\": [\"{{uploadId}}\"],\n  \"persist\": true\n}"
+                },
+                "url": "{{baseUrl}}/analyze"
+              }
+            },
+            {
+              "name": "POST /analyze (inline posts)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    pm.collectionVariables.set('analysisId', pm.response.json().analysis_id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"posts\": [\n    {\n      \"platform\": \"instagram\",\n      \"content\": \"Hello from Postman!\",\n      \"created_at\": \"2024-06-18T12:00:00+00:00\"\n    }\n  ],\n  \"persist\": true\n}"
+                },
+                "url": "{{baseUrl}}/analyze"
+              }
+            },
+            {
+              "name": "POST /analyze (dry run, no persist)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"upload_ids\": [\"{{uploadId}}\"],\n  \"persist\": false\n}"
+                },
+                "url": "{{baseUrl}}/analyze"
+              }
+            },
+            {
+              "name": "GET /analyses/{user_id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    pm.test('analyses is array', () => pm.expect(body.analyses).to.be.an('array'));",
+                      "    if (body.analyses.length > 0 && !pm.collectionVariables.get('analysisId')) {",
+                      "        pm.collectionVariables.set('analysisId', body.analyses[0].analysis_id);",
+                      "    }",
+                      "} else {",
+                      "    console.error(pm.response.code, pm.response.text());",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/analyses/{{userId}}"
+              }
+            },
+            {
+              "name": "GET /analyses/{user_id}/{analysis_id}",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/analyses/{{userId}}/{{analysisId}}"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
