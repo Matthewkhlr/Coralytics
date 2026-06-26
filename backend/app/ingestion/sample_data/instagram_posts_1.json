@@ -1,0 +1,55 @@
+[
+  {
+    "media": [
+      {
+        "uri": "media/posts/202401/photo1.jpg",
+        "creation_timestamp": 1704110400,
+        "media_metadata": {
+          "camera_metadata": { "has_camera_metadata": false }
+        },
+        "title": "",
+        "cross_post_source": { "source_app": "FB" }
+      },
+      {
+        "uri": "media/posts/202401/photo2.jpg",
+        "creation_timestamp": 1704110400,
+        "media_metadata": {
+          "camera_metadata": { "has_camera_metadata": false }
+        },
+        "title": "",
+        "cross_post_source": { "source_app": "FB" }
+      }
+    ],
+    "title": "Big day at the office, shipped a new feature! #tech #career",
+    "creation_timestamp": 1704110400
+  },
+  {
+    "title": "Hiking this weekend was incredible \u2014 best views all year. #travel #outdoors",
+    "creation_timestamp": 1705320000,
+    "media": [
+      {
+        "uri": "media/posts/202401/hike.jpg",
+        "creation_timestamp": 1705320000,
+        "title": ""
+      }
+    ]
+  },
+  {
+    "media": [
+      {
+        "uri": "media/posts/202402/photo3.jpg",
+        "creation_timestamp": 1706961600,
+        "media_metadata": {
+          "photo_metadata": {
+            "exif_data": [
+              { "device_id": "ABCD-1234", "camera_position": "unknown", "source_type": "library" }
+            ]
+          },
+          "camera_metadata": { "has_camera_metadata": false }
+        },
+        "title": "Coffee with old friends, feeling grateful today.",
+        "cross_post_source": { "source_app": "FB" }
+      }
+    ]
+  }
+]
