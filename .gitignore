@@ -32,17 +32,10 @@ __pycache__/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-firebase-debug.log
-firestore-debug.log
-ui-debug.log
 
 # local env files
 .env*.local
 .env
-
-# firebase service account keys (never commit)
-service-account*.json
-*-firebase-adminsdk-*.json
 
 # vercel
 .vercel
