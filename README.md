@@ -1,19 +1,40 @@
 # Coralytics
 
-Coralytics is a React + Three.js web app with a Python/FastAPI analysis backend. Social export files are ingested, normalized, and stored in **Firestore** (no Cloud Storage on the free Spark plan).
+Coralytics is a React + Three.js web app with a Python/FastAPI analysis backend. Social export files are ingested, normalized, and stored in **Firestore** (no Cloud Storage on the free Spark plan). The dashboard visualizes your digital footprint as a personalized 3D coral.
 
 **Firebase project:** `coralytics-c8767` (see `.firebaserc`)
+
+## Architecture
+
+```
+┌─────────────────┐     /api proxy      ┌──────────────────┐     Admin SDK    ┌───────────────┐
+│  frontend/      │ ──────────────────► │  backend/        │ ─────────────► │  Firestore    │
+│  React + Vite   │   localhost:8000    │  FastAPI         │                │  (emulator /  │
+│  Three.js coral │                     │  ingestion + NLP │                │   cloud)      │
+└─────────────────┘                     └──────────────────┘                └───────────────┘
+```
+
+| Layer | Stack | Dev command |
+|---|---|---|
+| Frontend | React 19, Vite, React Router, Three.js | `cd frontend && npm run dev` |
+| Backend | Python 3, FastAPI, firebase-admin | `cd backend && uvicorn app.main:app --reload` |
+| Data | Firestore (+ local emulator) | `npm run firebase:emulators` (repo root) |
+| Tooling | Firebase CLI (repo root `package.json`) | `npm install` at repo root |
+
+The backend is **Python** — there is no `npm run dev` in `backend/`. Use a Python virtual environment (`.venv`) and `uvicorn`.
 
 ## Structure
 
 | Path | Purpose |
 |---|---|
-| `frontend/` | Vite React app — dashboard and 3D organism visualiser |
-| `frontend/src/three/` | Procedural organism generators for the Three.js coral/tree |
+| `frontend/` | Vite React app — dashboard, upload flow, 3D coral visualiser |
+| `frontend/src/pages/` | Routes: Dashboard, Upload, Insights, Share |
+| `frontend/src/api/` | Typed API client (`fetch` → FastAPI) |
+| `frontend/src/three/` | Procedural organism generators (`coralV1`–`v3`) |
 | `backend/` | FastAPI service — ingestion, Firestore persistence, analysis stubs |
 | `backend/app/ingestion/` | Export parsers (Instagram, LinkedIn, Reddit, generic) |
 | `backend/app/ingestion/sample_data/` | Bundled demo exports used by the seed script |
-| `test/` | API tests (Postman collection), fixtures, data-model diagram |
+| `test/` | Postman collection, fixtures, data-model diagram |
 | `firebase.json` | Firestore, Hosting, and emulator configuration |
 | `firestore.rules` | User-scoped security rules (enforced when Firebase Auth is wired up) |
 | `.env` | Shared config for frontend (`VITE_*`) and backend (repo root) |
@@ -32,53 +53,120 @@ Schema diagram: [`test/coralytics_data_model.mmd`](test/coralytics_data_model.mm
 
 The FastAPI backend writes via the **Firebase Admin SDK** and bypasses client security rules. Rules apply when the frontend talks to Firestore directly with Auth.
 
+## Prerequisites
+
+| Tool | Version | Used for |
+|---|---|---|
+| **Node.js** | 18+ | Frontend, Firebase CLI, repo scripts |
+| **Python** | 3.10+ | Backend API (`py -3` on Windows) |
+| **JDK** | **21+** | Firebase emulators (Java 8 will not work) |
+
+Check versions:
+
+```bash
+node -v
+py -3 --version      # Windows
+python3 --version    # macOS / Linux
+java -version        # must be 21+
+```
+
 ## Quick start (local)
 
-**Terminal 1 — Firestore emulator** (repo root):
+You need **four terminals** running at once: emulator → backend → seed (once) → frontend.
+
+### 0. One-time setup
 
 ```bash
 cp .env.example .env
-npm install
+npm install                    # repo root — Firebase CLI
+cd frontend && npm install     # frontend deps
+cd ../backend
+py -3 -m venv .venv            # Windows (use python3 on macOS/Linux)
+.venv\Scripts\activate         # Windows: .venv\Scripts\activate
+# source .venv/bin/activate    # macOS / Linux
+pip install -r requirements.txt
+```
+
+Set `FIREBASE_PROJECT_ID=coralytics-c8767` in `.env` (must match `.firebaserc`).
+
+### Terminal 1 — Firestore emulator (repo root)
+
+```bash
 npm run firebase:emulators
 ```
 
-**Terminal 2 — backend:**
+- Emulator UI: http://localhost:4000
+- Firestore listens on `localhost:8080`
+
+> **Requires JDK 21+.** If you see `firebase-tools no longer supports Java version before 21`, install a newer JDK from [Adoptium](https://adoptium.net/) and verify with `java -version`.
+
+### Terminal 2 — backend API
 
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+.venv\Scripts\activate         # Windows
+# source .venv/bin/activate    # macOS / Linux
 uvicorn app.main:app --reload
 ```
 
-**Terminal 3 — seed demo data:**
+- API: http://localhost:8000
+- Health check: http://localhost:8000/health → `{"status":"ok","use_emulators":true,...}`
+
+### Terminal 3 — seed demo data (once per fresh emulator)
 
 ```bash
-cd backend && source .venv/bin/activate
 npm run seed
 ```
 
-- API: http://localhost:8000
-- Emulator UI: http://localhost:4000 → `users/demo-user/`
+Loads all files in `sample_data/` (16 normalized posts, mixed platforms) and creates a stub analysis for `demo-user`.
 
-`.env` for local dev should include:
+View in Emulator UI: http://localhost:4000 → `users` → `demo-user`
+
+### Terminal 4 — frontend
 
 ```bash
-FIREBASE_PROJECT_ID=coralytics-c8767
-FIRESTORE_EMULATOR_HOST=localhost:8080
+cd frontend
+npm run dev
 ```
+
+- App: http://localhost:5173
+- API calls go to `/api/*` → Vite proxies to `http://localhost:8000`
 
 A service account key is **not** required for emulator-only work.
 
 ## Frontend
 
-Uses the shared `.env` at the repo root. Prefix frontend variables with `VITE_` (e.g. `VITE_API_URL`).
+The React app reads from the shared `.env` at the repo root (`VITE_*` variables). Vite is configured with `envDir` pointing at the repo root and proxies `/api` to the backend during development.
+
+### Routes
+
+| Route | Page |
+|---|---|
+| `/` | Dashboard — metrics, 3D coral, latest analysis |
+| `/upload` | Import — drag-and-drop export upload + analyze |
+| `/insights` | Topic and sentiment breakdown (empty until NLP lands) |
+| `/share` | Export / compare placeholders |
+
+### API integration
+
+The frontend calls the FastAPI backend (not Firestore directly):
+
+| Frontend feature | API endpoint |
+|---|---|
+| Export history sidebar | `GET /uploads/{user_id}` |
+| Dashboard metrics + coral | `GET /analyses/{user_id}` |
+| File upload | `POST /uploads` (multipart) |
+| Analyze after upload | `POST /analyze` |
+
+Until Firebase Auth is wired up, the demo user id defaults to `demo-user` (`VITE_DEMO_USER_ID`).
+
+### Scripts
 
 ```bash
 cd frontend
-npm install
-npm run dev
+npm run dev       # dev server on :5173
+npm run build     # production build → frontend/dist
+npm run preview   # preview production build
 ```
 
 ## Backend API
@@ -112,8 +200,6 @@ cd backend && python -m app.ingestion.demo
 
 ### Seed demo data
 
-Loads every file in `sample_data/` into Firestore (16 normalized posts, mixed platforms) and creates a stub analysis.
-
 | Target | Command | View data |
 |---|---|---|
 | Local emulator | `npm run seed` | http://localhost:4000 |
@@ -133,6 +219,7 @@ cd backend && python -m app.seed --cloud --user-id demo-user
 | Script | Description |
 |---|---|
 | `npm run firebase:emulators` | Start Firestore emulator |
+| `npm run firebase:emulators:all` | Start Firestore + Hosting + Auth emulators |
 | `npm run firebase:deploy:rules` | Deploy `firestore.rules` to cloud |
 | `npm run firebase:deploy:hosting` | Deploy frontend build to Firebase Hosting |
 | `npm run seed` | Seed local emulator with sample data |
@@ -148,9 +235,32 @@ Copy `.env.example` → `.env` at the **repo root**.
 | `FIRESTORE_EMULATOR_HOST` | Local only | e.g. `localhost:8080` — routes writes to the emulator |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Cloud only | Path to service account JSON; **relative paths resolve from repo root** |
 | `CORS_ORIGINS` | Optional | Comma-separated allowed origins (default: `http://localhost:5173`) |
+| `VITE_API_URL` | Frontend | API base URL; use `/api` with Vite dev proxy (default) |
+| `VITE_DEMO_USER_ID` | Frontend | User id until Auth is wired up (default: `demo-user`) |
 | `SEED_ENDPOINT_ENABLED` | Optional | Set to `1` to allow `POST /seed/sample-data` against cloud |
+| `MAX_UPLOAD_SIZE_BYTES` | Optional | Max upload size in bytes (default: 25 MB) |
 
 **Never commit** `service-account.json` or `.env` — both are gitignored.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `ECONNREFUSED` on `/api/...` in Vite logs | Backend not running | Start uvicorn in `backend/` (see Terminal 2) |
+| `Internal Server Error` on uploads sidebar | Emulator down or backend can't reach Firestore | Start `npm run firebase:emulators`; restart uvicorn |
+| `firebase-tools no longer supports Java version before 21` | Old Java installed | Install JDK 21+; verify `java -version` |
+| `uvicorn` not recognized | No venv or deps not installed | Create `.venv`, activate, `pip install -r requirements.txt` |
+| `npm run dev` fails in `backend/` | Backend is Python, not Node | Use `uvicorn app.main:app --reload` instead |
+| Empty coral / sample preview | Backend stub returns empty `organism_data.topics` | Expected until NLP is integrated; upload + analyze still works |
+| Sidebar shows no uploads | Emulator was reset | Re-run `npm run seed` |
+
+**Verify the stack:**
+
+1. http://localhost:8000/health → `status: ok`
+2. http://localhost:8000/uploads/demo-user → `uploads: [...]` (after seed)
+3. http://localhost:5173/api/health → same as step 1 (proxy working)
+
+Import `test/Coralytics.postman_collection.json` and run folder **03 - Frontend flow** to test the same endpoints the React app uses.
 
 ## Firebase setup
 
@@ -174,6 +284,8 @@ npx firebase login --reauth
 3. Set project ID in `.firebaserc` and `FIREBASE_PROJECT_ID` in `.env`.
 
 ### 3. Local development (emulators)
+
+Requires **JDK 21+** (see Prerequisites).
 
 ```bash
 npm run firebase:emulators
@@ -227,12 +339,34 @@ cd .. && npm run firebase:deploy:hosting
 
 ## Testing
 
-`test/Coralytics.postman_collection.json` is for **API verification only** (health, uploads, analyze). It is not part of the demo-data workflow — use `npm run seed` / `npm run seed:cloud` instead.
+`test/Coralytics.postman_collection.json` covers all API endpoints. Recommended folders:
 
-`test/fixtures/` contains copies of sample files for manual `POST /uploads` file-upload tests in Postman.
+| Folder | Purpose |
+|---|---|
+| **00 - Seed demo data** | One-shot seed into Firestore |
+| **01 - Full pipeline** | End-to-end: ingest → list → analyze |
+| **03 - Frontend flow** | Same calls the React app makes (sidebar, dashboard, upload) |
+
+`test/fixtures/` contains sample files for manual `POST /uploads` file-upload tests in Postman.
 
 ## Status / roadmap
 
-- **Done:** Firestore persistence, ingestion pipeline, local emulator, cloud seed, security rules
-- **Stub:** `POST /analyze` returns empty `topics` and `sentiment_summary` until VADER / TF-IDF are integrated
-- **Planned:** Firebase Auth (`user_id` = `auth.uid`), frontend API wiring, real NLP on analysis documents
+### Done
+
+- Firestore persistence, ingestion pipeline, local emulator, cloud seed, security rules
+- Frontend dashboard with live API data (analyses, uploads)
+- Upload flow: drag-and-drop → ingest report → analyze
+- React Router (`/`, `/upload`, `/insights`, `/share`)
+- 3D coral visualiser (procedural generators; sample data fallback when NLP topics are empty)
+
+### Stub / in progress
+
+- `POST /analyze` returns empty `topics` and `sentiment_summary` until VADER / TF-IDF are integrated
+- Insights page UI ready; waiting on real NLP output
+- Share / export / compare pages are placeholders
+
+### Planned
+
+- Firebase Auth (`user_id` = `auth.uid`)
+- Real NLP → populated topics, sentiment, and `organism_data` for the coral
+- Export coral report, compare corals, share previews

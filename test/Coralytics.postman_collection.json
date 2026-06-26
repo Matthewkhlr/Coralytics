@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "coralytics-api-collection",
     "name": "Coralytics API",
-    "description": "Postman collection for the Coralytics FastAPI backend.\n\n## Quick start\n1. Repo root: `npm run firebase:emulators`\n2. Backend: `cd backend && uvicorn app.main:app --reload`\n3. Import this collection into Postman\n4. Run folder **00 - Seed demo data** to load all sample platforms into Firestore\n5. Or run **01 - Full pipeline** with Collection Runner (in order)\n\n## Variables\n- `baseUrl` — http://localhost:8000\n- `userId` — test user id (default: demo-user)\n- `uploadId` / `analysisId` — set automatically\n\n## Seeding\n**POST /seed/sample-data** ingests every file in `backend/app/ingestion/sample_data/` and creates a stub analysis. Works with emulators; for cloud set `SEED_ENDPOINT_ENABLED=1` or use `python -m app.seed`.\n\n## Maintaining\nAdd new endpoints under **02 - Individual requests** and append to **01 - Full pipeline** when part of the core flow.",
+    "description": "Postman collection for the Coralytics FastAPI backend.\n\n## Quick start\n1. Repo root: `npm run firebase:emulators`\n2. Backend: `cd backend && uvicorn app.main:app --reload`\n3. Import this collection into Postman\n4. Run folder **03 - Frontend flow** or **00 - Seed demo data**\n5. Frontend dev server proxies `/api` → `http://localhost:8000` (see `VITE_API_URL` in `.env`)\n\n## Variables\n- `baseUrl` — http://localhost:8000\n- `userId` — test user id (default: demo-user, matches `VITE_DEMO_USER_ID`)\n- `uploadId` / `analysisId` — set automatically by seed/upload/analyze requests\n\n## Frontend sidebar endpoints\nThe React app calls:\n- `GET /uploads/{user_id}` — export history sidebar\n- `GET /analyses/{user_id}` — dashboard metrics + coral\n- `POST /uploads` — import page file upload\n- `POST /analyze` — analyze after upload\n\n## Seeding\n**POST /seed/sample-data** ingests every file in `backend/app/ingestion/sample_data/` and creates a stub analysis. Works with emulators; for cloud set `SEED_ENDPOINT_ENABLED=1` or use `python -m app.seed`.\n\n## Troubleshooting 500 on GET /uploads\n- Ensure Firestore emulator is running (`npm run firebase:emulators`)\n- Ensure `.env` has `FIRESTORE_EMULATOR_HOST=localhost:8080`\n- Restart uvicorn after changing `.env`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -317,6 +317,219 @@
       ]
     },
     {
+      "name": "03 - Frontend flow (Sprint 2)",
+      "description": "Mirrors the React app: health → seed → list uploads (sidebar) → list analyses (dashboard) → optional re-analyze. Run after emulators + uvicorn are up.",
+      "item": [
+        {
+          "name": "1. GET /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('status is ok', () => pm.expect(body.status).to.eql('ok'));",
+                  "console.log('emulators:', body.use_emulators, '| project:', body.firebase_project);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "2. POST /seed/sample-data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('uploadId', body.upload_id);",
+                  "pm.collectionVariables.set('analysisId', body.analysis_id);",
+                  "pm.test('upload_id set', () => pm.expect(body.upload_id).to.be.a('string').and.not.empty);",
+                  "console.log('Seeded upload:', body.upload_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                { "key": "run_analysis", "value": "true", "type": "text" }
+              ]
+            },
+            "url": "{{baseUrl}}/seed/sample-data"
+          }
+        },
+        {
+          "name": "3. GET /uploads/{user_id} (sidebar)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) {",
+                  "    console.error('Response:', pm.response.text());",
+                  "    return;",
+                  "}",
+                  "const body = pm.response.json();",
+                  "pm.test('uploads is array', () => pm.expect(body.uploads).to.be.an('array'));",
+                  "pm.test('at least one upload after seed', () => pm.expect(body.uploads.length).to.be.above(0));",
+                  "const first = body.uploads[0];",
+                  "pm.test('upload shape', () => {",
+                  "    pm.expect(first).to.have.property('upload_id');",
+                  "    pm.expect(first).to.have.property('filename');",
+                  "    pm.expect(first).to.have.property('platform');",
+                  "    pm.expect(first).to.have.property('post_count');",
+                  "    pm.expect(first).to.have.property('created_at');",
+                  "});",
+                  "if (!pm.collectionVariables.get('uploadId') && first) {",
+                  "    pm.collectionVariables.set('uploadId', first.upload_id);",
+                  "}",
+                  "console.log('Uploads:', body.uploads.length, '| latest:', first?.filename);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/uploads/{{userId}}",
+            "description": "Same call the frontend sidebar uses (Export history)."
+          }
+        },
+        {
+          "name": "4. GET /analyses/{user_id} (dashboard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) {",
+                  "    console.error('Response:', pm.response.text());",
+                  "    return;",
+                  "}",
+                  "const body = pm.response.json();",
+                  "pm.test('analyses is array', () => pm.expect(body.analyses).to.be.an('array'));",
+                  "pm.test('at least one analysis after seed', () => pm.expect(body.analyses.length).to.be.above(0));",
+                  "const first = body.analyses[0];",
+                  "pm.test('analysis shape', () => {",
+                  "    pm.expect(first).to.have.property('analysis_id');",
+                  "    pm.expect(first).to.have.property('post_count');",
+                  "    pm.expect(first).to.have.property('organism_data');",
+                  "});",
+                  "pm.collectionVariables.set('analysisId', first.analysis_id);",
+                  "console.log('Analyses:', body.analyses.length, '| latest posts:', first?.post_count);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/analyses/{{userId}}",
+            "description": "Same call the dashboard uses for metrics and coral data."
+          }
+        },
+        {
+          "name": "5. POST /analyze (re-run from upload)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('uploadId')) {",
+                  "    throw new Error('uploadId empty — run seed or upload first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('analysisId', body.analysis_id);",
+                  "pm.test('post_count > 0', () => pm.expect(body.post_count).to.be.above(0));",
+                  "console.log('New analysis:', body.analysis_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{userId}}\",\n  \"upload_ids\": [\"{{uploadId}}\"],\n  \"persist\": true\n}"
+            },
+            "url": "{{baseUrl}}/analyze",
+            "description": "Same as the Import page Analyze now button."
+          }
+        },
+        {
+          "name": "6. POST /uploads (file upload)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) {",
+                  "    console.error('Response:', pm.response.text());",
+                  "    return;",
+                  "}",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('uploadId', body.upload_id);",
+                  "pm.test('upload_id returned', () => pm.expect(body.upload_id).to.be.a('string').and.not.empty);",
+                  "pm.test('ingest_report present', () => pm.expect(body.ingest_report).to.be.an('object'));",
+                  "console.log('Uploaded:', body.filename, '| posts:', body.post_count);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "user_id", "value": "{{userId}}", "type": "text" },
+                {
+                  "key": "file",
+                  "description": "Select test/fixtures/instagram_posts_1.json in Postman Body",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/uploads",
+            "description": "Multipart upload — same as the /upload drag-and-drop page. Select a file in Body before sending."
+          }
+        }
+      ]
+    },
+    {
       "name": "02 - Individual requests",
       "item": [
         {
@@ -424,6 +637,23 @@
             },
             {
               "name": "POST /uploads (file upload)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    pm.collectionVariables.set('uploadId', body.upload_id);",
+                      "    console.log('uploadId:', body.upload_id, '| posts:', body.post_count);",
+                      "} else {",
+                      "    console.error(pm.response.code, pm.response.text());",
+                      "}"
+                    ]
+                  }
+                }
+              ],
               "request": {
                 "method": "POST",
                 "header": [],
@@ -445,6 +675,26 @@
             },
             {
               "name": "GET /uploads/{user_id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    pm.test('uploads is array', () => pm.expect(body.uploads).to.be.an('array'));",
+                      "    if (body.uploads.length > 0 && !pm.collectionVariables.get('uploadId')) {",
+                      "        pm.collectionVariables.set('uploadId', body.uploads[0].upload_id);",
+                      "    }",
+                      "    console.log('uploads:', body.uploads.length);",
+                      "} else {",
+                      "    console.error(pm.response.code, pm.response.text());",
+                      "}"
+                    ]
+                  }
+                }
+              ],
               "request": {
                 "method": "GET",
                 "header": [],
@@ -544,6 +794,25 @@
             },
             {
               "name": "GET /analyses/{user_id}",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    pm.test('analyses is array', () => pm.expect(body.analyses).to.be.an('array'));",
+                      "    if (body.analyses.length > 0 && !pm.collectionVariables.get('analysisId')) {",
+                      "        pm.collectionVariables.set('analysisId', body.analyses[0].analysis_id);",
+                      "    }",
+                      "} else {",
+                      "    console.error(pm.response.code, pm.response.text());",
+                      "}"
+                    ]
+                  }
+                }
+              ],
               "request": {
                 "method": "GET",
                 "header": [],
