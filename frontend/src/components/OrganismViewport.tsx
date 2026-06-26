@@ -1,23 +1,26 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { coralV1 } from "../three/generators/coralV1";
-import { coralV2 } from "../three/generators/coralV2";
 import { coralV3 } from "../three/generators/coralV3";
 import type { OrganismData, OrganismGenerator } from "../three/organismTypes";
 
 const useGenerator: OrganismGenerator = coralV3;
 
-const sampleOrganismData: OrganismData = {
-  accountAgeDays: 1240,
-  topics: [
-    { name: "tech", postVolume: 82, sentiment: 0.6 },
-    { name: "career", postVolume: 44, sentiment: 0.3 },
-    { name: "social", postVolume: 31, sentiment: -0.1 },
-  ],
+const clock = new THREE.Clock();
+const pulseSpeed = 1.2;
+const bendAmountMax = 0.3;
+
+type OrganismViewportProps = {
+  data: OrganismData;
+  dataSource?: "analysis" | "sample";
+  isLoading?: boolean;
 };
 
-export function OrganismViewport() {
+export function OrganismViewport({
+  data,
+  dataSource = "analysis",
+  isLoading = false,
+}: OrganismViewportProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -44,7 +47,7 @@ export function OrganismViewport() {
     grid.position.y = -1.2;
     scene.add(grid);
 
-    const { coral, cleanup } = useGenerator(scene, sampleOrganismData);
+    const { coral, cleanup } = useGenerator(scene, data);
 
     const resize = () => {
       const { clientWidth, clientHeight } = host;
@@ -60,16 +63,44 @@ export function OrganismViewport() {
     let frameId = 0;
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enablePan = true;
-    //controls.enableRotate =true; //default
-    //controls.enableZoom = true; //default
 
     const render = () => {
       frameId = window.requestAnimationFrame(render);
       controls.update();
 
-      //rotation logic
-      coral.rotation.y += 0.01;
-      //coral.rotation.y+=0.01;
+      const elapsed = clock.getElapsedTime();
+      const pulse = (Math.sin(elapsed * pulseSpeed) + 1) / 2;
+
+      const ud = coral.userData as {
+        tentacleData?: {
+          geometry: THREE.BufferGeometry;
+          original: Float32Array;
+          angle: number;
+        }[];
+        tentacleHeight?: number;
+      };
+
+      const tentacleData = ud.tentacleData;
+      if (tentacleData && ud.tentacleHeight) {
+        const tentacleHeight = ud.tentacleHeight;
+        const vertex = new THREE.Vector3();
+
+        for (const { geometry, original, angle } of tentacleData) {
+          const pos = geometry.attributes.position as THREE.BufferAttribute;
+
+          for (let i = 0; i < pos.count; i++) {
+            vertex.fromArray(original, i * 3);
+            const t = (vertex.y + tentacleHeight / 2) / tentacleHeight;
+            const bend = bendAmountMax * pulse * t;
+            vertex.x += Math.cos(angle) * bend;
+            vertex.z += Math.sin(angle) * bend;
+            pos.setXYZ(i, vertex.x, vertex.y, vertex.z);
+          }
+
+          pos.needsUpdate = true;
+          geometry.computeVertexNormals();
+        }
+      }
 
       renderer.render(scene, camera);
     };
@@ -78,15 +109,26 @@ export function OrganismViewport() {
     return () => {
       window.cancelAnimationFrame(frameId);
       observer.disconnect();
+      controls.dispose();
       cleanup();
       renderer.dispose();
       host.removeChild(renderer.domElement);
     };
-  }, []);
+  }, [data]);
+
+  const label =
+    dataSource === "sample"
+      ? "Sample coral — upload & analyze to personalize"
+      : `${data.topics.length} topic${data.topics.length === 1 ? "" : "s"} · drag to orbit`;
 
   return (
-    <div className="organism-viewport" ref={hostRef}>
-      <div className="viewport-label">Three.js scene ready</div>
+    <div className={`organism-viewport${isLoading ? " organism-viewport--loading" : ""}`} ref={hostRef}>
+      {isLoading ? (
+        <div className="viewport-overlay" role="status" aria-live="polite">
+          Loading coral…
+        </div>
+      ) : null}
+      <div className="viewport-label">{label}</div>
     </div>
   );
 }
