@@ -3,6 +3,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from google.cloud.firestore_v1 import Query
+
 from app.firebase import get_firestore_client
 
 BATCH_SIZE = 400
@@ -90,7 +92,11 @@ def get_upload_metadata(user_id: str, upload_id: str) -> dict[str, Any]:
 
 def list_uploads(user_id: str) -> list[dict[str, Any]]:
     """List all uploads for a user."""
-    snapshots = _uploads_collection(user_id).order_by("created_at", direction="DESCENDING").stream()
+    snapshots = (
+        _uploads_collection(user_id)
+        .order_by("created_at", direction=Query.DESCENDING)
+        .stream()
+    )
     return [doc.to_dict() for doc in snapshots if doc.exists]
 
 
@@ -154,5 +160,9 @@ def get_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
 
 def list_analyses(user_id: str) -> list[dict[str, Any]]:
     """List all analyses for a user."""
-    snapshots = _analyses_collection(user_id).order_by("created_at", direction="DESCENDING").stream()
+    snapshots = (
+        _analyses_collection(user_id)
+        .order_by("created_at", direction=Query.DESCENDING)
+        .stream()
+    )
     return [doc.to_dict() for doc in snapshots if doc.exists]
