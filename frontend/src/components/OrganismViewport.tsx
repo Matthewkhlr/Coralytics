@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { coralV3 } from "../three/generators/coralV3";
@@ -22,6 +22,8 @@ export function OrganismViewport({
   isLoading = false,
 }: OrganismViewportProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const [cameraY, setCameraY ] = useState(3);
+
 
   useEffect(() => {
     const host = hostRef.current;
@@ -31,7 +33,7 @@ export function OrganismViewport({
     scene.background = new THREE.Color("#f9fbfc");
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
-    camera.position.set(4, 3, 6);
+    camera.position.set(4, cameraY, 6);
     camera.lookAt(0, 0.6, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -62,10 +64,14 @@ export function OrganismViewport({
 
     let frameId = 0;
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan = true;
+    controls.enablePan = false; //keep orbit and zoom only
 
     const render = () => {
       frameId = window.requestAnimationFrame(render);
+      
+      camera.position.y = cameraY;
+      camera.lookAt(0,0.6,0);
+     
       controls.update();
 
       const elapsed = clock.getElapsedTime();
@@ -114,15 +120,35 @@ export function OrganismViewport({
       renderer.dispose();
       host.removeChild(renderer.domElement);
     };
-  }, [data]);
+  }, [data, cameraY]);
 
   const label =
     dataSource === "sample"
       ? "Sample coral — upload & analyze to personalize"
       : `${data.topics.length} topic${data.topics.length === 1 ? "" : "s"} · drag to orbit`;
 
-  return (
-    <div className={`organism-viewport${isLoading ? " organism-viewport--loading" : ""}`} ref={hostRef}>
+return (
+  <div className="organism-viewport-wrapper">
+    <div className="viewport-header">
+      <label>
+        Camera height
+        <input
+          type="range"
+          min={0.5}
+          max={10}
+          step={0.1}
+          value={cameraY}
+          onChange={e => setCameraY(parseFloat(e.target.value))}
+        />
+      </label>
+    </div>
+
+    <div
+      className={`organism-viewport${
+        isLoading ? " organism-viewport--loading" : ""
+      }`}
+      ref={hostRef}
+    >
       {isLoading ? (
         <div className="viewport-overlay" role="status" aria-live="polite">
           Loading coral…
@@ -130,5 +156,6 @@ export function OrganismViewport({
       ) : null}
       <div className="viewport-label">{label}</div>
     </div>
-  );
+  </div>
+);
 }
