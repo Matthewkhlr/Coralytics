@@ -1,2 +1,2 @@
-id,permalink,date,subreddit,link,parent,body
-ghi789,/r/technology/comments/abc123/_/ghi789,2024-01-12 11:00:00,technology,abc123,abc123,"I noticed the same thing, really happy with the update."
+id,permalink,date,ip,subreddit,gildings,gildings_silver,gildings_supergold,link,parent,body,media
+ghi789,/r/technology/comments/abc123/_/ghi789,2024-01-12 11:00:00 UTC,,technology,0,0,0,abc123,abc123,"I noticed the same thing, really happy with the update.",

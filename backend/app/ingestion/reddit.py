@@ -1,17 +1,35 @@
 """
-Parser for Reddit data.
+Parser for Reddit "Request my data" CSV exports.
 
-Two input shapes are supported:
+Validated against a real Reddit export (June 2026). The export contains
+many CSV files -- this parser focuses on the two that contain text
+written by the user:
 
-1. Reddit's official GDPR data export CSVs:
-     - posts.csv    columns: id, permalink, date, subreddit, title, url, body, ...
-     - comments.csv columns: id, permalink, date, subreddit, link, parent, body, ...
+  posts.csv
+      cols: id, permalink, date, ip, subreddit, gildings, title, url, body
+      Posts (submissions) the user made. `title` is always present;
+      `body` is the self-text (empty for link posts).
+      Content = title + body combined where both exist.
 
-2. "Sample"/API-style JSON, e.g. exported via PRAW or a pushshift-style
-   dump -- a list of dicts with keys like "title", "selftext"/"body",
-   "subreddit", "created_utc", "score", "permalink". This is the easiest
-   format to hand-write small demo/sample datasets in, so it's also our
-   fallback "sample data" format for testing the rest of the pipeline.
+  comments.csv
+      cols: id, permalink, date, ip, subreddit, gildings,
+            gildings_silver, gildings_supergold, link, parent, body, media
+      Comments the user wrote. `body` is the comment text.
+      No `title` column -- used to detect comment vs post files.
+
+Files explicitly skipped (no text content to analyze):
+  messages_archive.csv  -- private DMs (also caught by privacy exclusion
+                           in ingest.py via "messages" keyword)
+  chat_history.csv      -- chat DMs (also caught by privacy exclusion)
+  post_votes.csv        -- upvotes/downvotes, no text
+  comment_votes.csv     -- upvotes/downvotes, no text
+  saved_posts.csv       -- just permalinks
+  saved_comments.csv    -- just permalinks
+  subscribed_subreddits.csv -- just subreddit names
+  Everything else       -- metadata, skipped gracefully
+
+Detection is purely by column headers so it works regardless of
+whether the file is named posts.csv or posts_export.csv etc.
 """
 
 from __future__ import annotations
@@ -25,36 +43,66 @@ from .schema import NormalizedPost, Platform, PostType, make_id, safe_build_post
 
 HASHTAG_RE = re.compile(r"#(\w+)")
 
+# Real Reddit export column signatures (from validated export June 2026)
+# Posts:    have 'title' + 'body' + 'subreddit' + 'date'
+# Comments: have 'body' + 'parent' + 'subreddit' + 'date', NO 'title'
+_POST_REQUIRED = {"title", "body", "subreddit"}
+_COMMENT_REQUIRED = {"body", "parent", "subreddit"}
+
+# Files with only links/ids, no text content -- skip silently
+_SKIP_SIGNATURES: list[set[str]] = [
+    {"id", "permalink"},                          # saved_posts, post_headers
+    {"id", "permalink", "date", "ip"},            # post_headers extended
+    {"subreddit"},                                # subscribed_subreddits
+    {"id", "link_id", "vote"},                    # post_votes / comment_votes
+]
+
+
+def _sniff_shape(fieldnames: list[str]) -> tuple[str, PostType] | None:
+    """Return (content_column, PostType) for recognized content files,
+    or None for skippable/unrecognized files.
+    """
+    field_set = set(fieldnames)
+
+    # Posts: must have title + body + subreddit
+    if _POST_REQUIRED.issubset(field_set):
+        return "body", PostType.post  # body may be empty for link posts
+
+    # Comments: have body + parent but NO title
+    if _COMMENT_REQUIRED.issubset(field_set) and "title" not in field_set:
+        return "body", PostType.comment
+
+    return None
+
 
 def parse_reddit_csv(csv_text: str, filename: str = "") -> list[NormalizedPost]:
-    """Parse posts.csv or comments.csv from a Reddit data export.
+    """Parse a single Reddit export CSV file.
 
-    Detects which file it is by looking for a "title" column
-    (posts have one, comments don't).
+    Returns an empty list (never raises) if:
+      - the file doesn't match a recognized content shape, or
+      - all rows have empty body/title content.
+
+    Safe to call on every CSV in the export without knowing which
+    file is which.
     """
     reader = csv.DictReader(io.StringIO(csv_text))
-    fieldnames = set(reader.fieldnames or [])
+    fieldnames = reader.fieldnames or []
 
-    if not fieldnames:
+    shape = _sniff_shape(fieldnames)
+    if shape is None:
         return []
 
-    is_post = "title" in fieldnames
-    is_comment = "body" in fieldnames and not is_post
-
-    if not (is_post or is_comment):
-        return []
-
+    _, post_type = shape
     posts: list[NormalizedPost] = []
 
     for row in reader:
-        if is_post:
+        if post_type == PostType.post:
             title = (row.get("title") or "").strip()
             body = (row.get("body") or "").strip()
+            # Combine title + body; for link posts body is empty
             content = f"{title}\n\n{body}".strip() if body else title
-            post_type = PostType.post
         else:
             content = (row.get("body") or "").strip()
-            post_type = PostType.comment
 
         if not content:
             continue
@@ -62,7 +110,7 @@ def parse_reddit_csv(csv_text: str, filename: str = "") -> list[NormalizedPost]:
         raw_id = row.get("id") or f"{filename}-{len(posts)}"
 
         post = safe_build_post(
-            id=make_id(Platform.reddit, raw_id),
+            id=make_id(Platform.reddit, str(raw_id)),
             platform=Platform.reddit,
             content=content,
             created_at=to_iso(row.get("date")),
@@ -78,8 +126,10 @@ def parse_reddit_csv(csv_text: str, filename: str = "") -> list[NormalizedPost]:
 
 
 def parse_reddit_export(files: dict[str, str]) -> list[NormalizedPost]:
-    """Parse posts.csv / comments.csv (and skip anything else) from a
-    Reddit data export. `files` maps filename -> raw CSV text.
+    """Parse a full Reddit export at once.
+
+    `files` maps filename -> raw CSV text. Unrecognized and
+    no-content files are silently skipped.
     """
     posts: list[NormalizedPost] = []
     for filename, content in files.items():
@@ -90,9 +140,9 @@ def parse_reddit_export(files: dict[str, str]) -> list[NormalizedPost]:
 
 
 def parse_reddit_json(data: list[dict[str, Any]]) -> list[NormalizedPost]:
-    """Parse a list of Reddit-style JSON objects (PRAW/pushshift-ish, or
-    hand-written sample data). Recognized keys per item:
+    """Parse a list of Reddit-style JSON objects (PRAW/pushshift-style).
 
+    Recognized keys per item:
         title, selftext/body, subreddit, created_utc, score,
         permalink/url, id
     """

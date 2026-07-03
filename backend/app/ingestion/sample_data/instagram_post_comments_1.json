@@ -1,7 +1,6 @@
 {
   "comments_media_comments": [
     {
-      "media_list_data": [{ "uri": "" }],
       "string_map_data": {
         "Comment": { "value": "This is awesome, congrats!" },
         "Media Owner": { "value": "a_friend" },
@@ -9,17 +8,16 @@
       }
     },
     {
-      "media_list_data": [{ "uri": "" }],
       "string_map_data": {
-        "Comment": { "value": "Haha so true \ud83d\ude02" },
+        "Comment": { "value": "Haha so true 😂" },
         "Media Owner": { "value": "another_friend" },
         "Time": { "timestamp": 1707500000 }
       }
     },
     {
-      "media_list_data": [{ "uri": "" }],
       "string_map_data": {
-        "Media Owner": { "value": "no_comment_text_example" },
+        "Comment": { "value": "Love this so much!" },
+        "Media Owner": { "value": "third_friend" },
         "Time": { "timestamp": 1707600000 }
       }
     }

@@ -107,7 +107,12 @@ def to_iso(timestamp: Optional[float | int | str]) -> Optional[str]:
             return None
 
     # Already a string -- try a couple of common formats, else pass through.
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%a %b %d %H:%M:%S %z %Y"):
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S",        # 2024-01-12 10:00:00
+        "%Y-%m-%d %H:%M:%S UTC",    # 2024-01-12 10:00:00 UTC  (Reddit export)
+        "%Y-%m-%dT%H:%M:%S",        # 2024-01-12T10:00:00
+        "%a %b %d %H:%M:%S %z %Y",  # Wed Jan 12 10:00:00 +0000 2024
+    ):
         try:
             return datetime.strptime(timestamp, fmt).isoformat()
         except ValueError:

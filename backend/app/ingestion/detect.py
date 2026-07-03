@@ -135,48 +135,54 @@ def parse_csv_auto(csv_text: str, filename: str = "") -> tuple[list[NormalizedPo
     """Detect the kind of `csv_text` (raw CSV file contents) and dispatch
     to the matching parser.
 
-    Tries LinkedIn first (by sniffing headers), then Reddit. Returns
-    (posts, kind) where kind is one of:
-      "linkedin"       -- recognized LinkedIn content file (shares/comments),
-                          posts may be empty if all rows had no text content
-      "linkedin_skip"  -- recognized LinkedIn file with no text to analyze
-                          (Reactions, InstantReposts, Skills, Education, etc.)
-      "reddit"         -- recognized Reddit CSV content
-      "unknown"        -- doesn't match any recognized shape
+    Detection order:
+      1. Reddit shape check (posts: title+body+subreddit, comments: body+parent+subreddit)
+      2. LinkedIn content shape check (ShareCommentary, Message+Link)
+      3. LinkedIn non-content heuristic (has 'Date' column -> linkedin_skip)
+      4. Unknown
 
-    Distinguishing "linkedin_skip" from "unknown" prevents noisy warnings
-    for the 30+ LinkedIn metadata CSVs that are expected to produce 0 posts.
+    Reddit is checked FIRST because Reddit CSVs also have a 'date' column
+    which would otherwise trigger the linkedin_skip fallback.
+
+    Returns (posts, kind) where kind is one of:
+      "reddit"         -- recognized Reddit CSV content file
+      "linkedin"       -- recognized LinkedIn content file
+      "linkedin_skip"  -- recognized LinkedIn non-content file (metadata)
+      "unknown"        -- doesn't match any recognized shape
     """
     import csv as _csv
     import io as _io
     from .linkedin import _sniff_shape as _linkedin_sniff
+    from .reddit import _sniff_shape as _reddit_sniff
 
-    # Peek at the headers to classify the file before parsing.
     reader = _csv.DictReader(_io.StringIO(csv_text))
     fieldnames = reader.fieldnames or []
 
-    if fieldnames:
-        shape = _linkedin_sniff(fieldnames)
-        if shape is not None:
-            # Recognized LinkedIn content file -- parse it (may return 0 posts
-            # if all rows had empty content, e.g. shares with no caption).
-            posts = parse_linkedin_csv(csv_text, filename=filename)
-            return posts, "linkedin"
+    if not fieldnames:
+        return [], "unknown"
 
-        # Check if it looks like any LinkedIn file at all (has "Date" column
-        # which most LinkedIn CSVs share) -- if so, it's a recognized
-        # non-content file rather than a truly unknown format.
-        if "Date" in fieldnames or "date" in fieldnames:
-            # Try Reddit before declaring it linkedin_skip, in case someone
-            # uploads a Reddit CSV that also has a Date column.
-            posts = parse_reddit_csv(csv_text, filename=filename)
-            if posts:
-                return posts, "reddit"
-            return [], "linkedin_skip"
+    # 1. Check Reddit first -- Reddit CSVs have 'date' (lowercase) and
+    #    distinctive columns (subreddit, body, title/parent) that don't
+    #    appear in LinkedIn exports.
+    reddit_shape = _reddit_sniff(fieldnames)
+    if reddit_shape is not None:
+        posts = parse_reddit_csv(csv_text, filename=filename)
+        # Return reddit_skip (not reddit) when recognized but empty --
+        # e.g. posts.csv with header only and no data rows -- so the
+        # caller doesn't log a spurious "no posts recognized" warning.
+        kind = "reddit" if posts else "reddit_skip"
+        return posts, kind
 
-    # Not LinkedIn -- try Reddit.
-    posts = parse_reddit_csv(csv_text, filename=filename)
-    if posts:
-        return posts, "reddit"
+    # 2. Check LinkedIn content files (Shares, Comments).
+    linkedin_shape = _linkedin_sniff(fieldnames)
+    if linkedin_shape is not None:
+        posts = parse_linkedin_csv(csv_text, filename=filename)
+        return posts, "linkedin"
+
+    # 3. LinkedIn non-content heuristic: LinkedIn uses 'Date' (capital D)
+    #    for most of its metadata CSVs. If we see it and neither Reddit
+    #    nor LinkedIn content matched, it's a LinkedIn metadata file.
+    if "Date" in fieldnames:
+        return [], "linkedin_skip"
 
     return [], "unknown"

@@ -5,18 +5,7 @@
         {
           "uri": "media/reels/202502/clip1.mp4",
           "creation_timestamp": 1707840000,
-          "media_metadata": {
-            "video_metadata": {
-              "exif_data": [
-                { "device_id": "ABCD-1234", "camera_position": "unknown", "source_type": "0" }
-              ]
-            },
-            "camera_metadata": { "has_camera_metadata": false }
-          },
-          "title": "3 things I wish I knew before starting my first job #career #advice",
-          "cross_post_source": { "source_app": "FB" },
-          "dubbing_info": [],
-          "media_variants": []
+          "title": "3 things I wish I knew before starting my first job #career #advice"
         }
       ]
     }

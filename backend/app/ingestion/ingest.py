@@ -173,6 +173,40 @@ _EXCLUDED_PATH_KEYWORDS = (
     "instantreposts_",
     "ad_targeting",
     "ads clicked",
+    # Reddit-specific non-content files
+    "messages_archive",
+    "chat_history",
+    "post_votes",
+    "comment_votes",
+    "post_headers",
+    "comment_headers",
+    "saved_posts",
+    "saved_comments",
+    "hidden_posts",
+    "subscribed_subreddits",
+    "poll_votes",
+    "ip_logs",
+    "user_preferences",
+    "statistics",
+    "persona",
+    "friends",
+    "multireddits",
+    "inferred_",
+    "linked_",
+    "announcements",
+    "gilded_content",
+    "approved_submitter",
+    "moderated_subreddits",
+    "sensitive_ads",
+    "account_gender",
+    "birthdate",
+    "checkfile",
+    "drafts",
+    "purchases",
+    "stripe",
+    "payouts",
+    "gold_received",
+    "scheduled_posts",
 )
 
 
@@ -329,7 +363,7 @@ def _parse_file(path: Path) -> tuple[list[NormalizedPost], str, Optional[str]]:
         return [], "error", f"Unexpected error parsing {path}: {exc}"
 
     warning = None
-    if not posts and kind not in ("linkedin_skip", "ignored", "empty", "excluded"):
+    if not posts and kind not in ("linkedin_skip", "reddit_skip", "ignored", "empty", "excluded"):
         warning = f"No posts/comments recognized in {path} (detected kind: {kind})"
 
     return posts, kind, warning
