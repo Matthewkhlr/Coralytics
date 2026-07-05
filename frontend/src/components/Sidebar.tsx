@@ -6,6 +6,7 @@ import {
   LoaderCircle,
   Network,
   Upload,
+  X,
 } from "lucide-react";
 import { DEMO_USER_ID } from "../api/config";
 import { useUploads } from "../hooks/useUploads";
@@ -22,15 +23,22 @@ const quickLinks = [
 type SidebarProps = {
   selectedUploadId?: string | null;
   onSelectUpload?: (uploadId: string) => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 };
 
-export function Sidebar({ selectedUploadId, onSelectUpload }: SidebarProps) {
+export function Sidebar({
+  selectedUploadId,
+  onSelectUpload,
+  mobileOpen = false,
+  onMobileClose,
+}: SidebarProps) {
   const location = useLocation();
   const queryUploadId = new URLSearchParams(location.search).get("upload");
   const { status, uploads, error, reload } = useUploads(DEMO_USER_ID);
 
-  return (
-    <aside className="sidebar" aria-label="Uploads and quick links">
+  const sidebarContent = (
+    <>
       <div className="sidebar-section">
         <div className="sidebar-section-header">
           <div>
@@ -120,6 +128,7 @@ export function Sidebar({ selectedUploadId, onSelectUpload }: SidebarProps) {
               to={item.to}
               end={item.end}
               key={item.label}
+              onClick={mobileOpen ? onMobileClose : undefined}
             >
               <Icon size={18} />
               <span>{item.label}</span>
@@ -127,6 +136,46 @@ export function Sidebar({ selectedUploadId, onSelectUpload }: SidebarProps) {
           );
         })}
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="sidebar" aria-label="Uploads and quick links">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile: backdrop + slide-in panel */}
+      {mobileOpen && (
+        <div
+          className="mobile-overlay"
+          onClick={onMobileClose}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`mobile-sidebar${mobileOpen ? " mobile-sidebar--open" : ""}`}
+        aria-label="Mobile navigation"
+        aria-hidden={!mobileOpen}
+      >
+        <div className="mobile-sidebar-header">
+          <NavLink className="brand" to="/" aria-label="Coralytics home" onClick={onMobileClose}>
+            <span className="brand-mark" aria-hidden="true" />
+            <span>Coralytics</span>
+          </NavLink>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close menu"
+            onClick={onMobileClose}
+          >
+            <X size={22} />
+          </button>
+        </div>
+        {sidebarContent}
+      </aside>
+    </>
   );
 }

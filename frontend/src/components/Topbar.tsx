@@ -9,7 +9,11 @@ const navItems = [
   { to: "/share", label: "Share" },
 ];
 
-export function Topbar() {
+type TopbarProps = {
+  onMenuClick: () => void;
+};
+
+export function Topbar({ onMenuClick }: TopbarProps) {
   return (
     <header className="topbar">
       <NavLink className="brand" to="/" aria-label="Coralytics home">
@@ -38,7 +42,12 @@ export function Topbar() {
         <button className="icon-button" type="button" aria-label="Settings">
           <Settings size={21} />
         </button>
-        <button className="icon-button menu-button" type="button" aria-label="Open menu">
+        <button
+          className="icon-button menu-button"
+          type="button"
+          aria-label="Open menu"
+          onClick={onMenuClick}
+        >
           <Menu size={22} />
         </button>
       </div>
