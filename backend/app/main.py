@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.firebase import init_firebase
-from app.services import firestore_service, ingestion_service, seed_service
+# CHANGED: added analysis_service to power the real /analyze endpoint below.
+from app.services import analysis_service, firestore_service, ingestion_service, seed_service
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
@@ -22,6 +23,11 @@ class Post(BaseModel):
 
 class AnalysisRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
+    # CHANGED: posts/upload_ids are kept for backwards compatibility with
+    # any existing callers, but are no longer used -- /analyze now always
+    # analyzes the user's ENTIRE post history (see analysis_service.py).
+    # Left in place rather than removed so this isn't a breaking schema
+    # change for anyone already calling this endpoint.
     posts: list[Post] = Field(default_factory=list)
     upload_ids: list[str] = Field(default_factory=list)
     persist: bool = True
@@ -46,12 +52,11 @@ app.add_middleware(
 )
 
 
-def _posts_from_uploads(user_id: str, upload_ids: list[str]) -> list[dict[str, object]]:
-    posts: list[dict[str, object]] = []
-    for upload_id in upload_ids:
-        batch, _ = firestore_service.list_upload_posts(user_id, upload_id, limit=10_000)
-        posts.extend(batch)
-    return posts
+# CHANGED: _posts_from_uploads removed -- it's no longer called anywhere.
+# analysis_service.run_user_analysis() now fetches a user's entire post
+# history itself via firestore_service.list_all_user_posts(), which
+# supersedes this helper's job of assembling posts from specific
+# upload_ids.
 
 
 ALLOWED_FIXTURES = frozenset({"instagram_posts_1.json", "linkedin_shares.csv"})
@@ -213,38 +218,22 @@ def get_user_upload_posts(
 
 @app.post("/analyze")
 def analyze_posts(payload: AnalysisRequest) -> dict[str, object]:
-    """Run placeholder analysis and optionally persist results to Firestore."""
-    posts = [post.model_dump() for post in payload.posts]
-    if not posts and payload.upload_ids:
-        posts = _posts_from_uploads(payload.user_id, payload.upload_ids)
+    """Run sentiment + topic analysis over a user's ENTIRE post history
+    (every upload, every platform) and optionally persist results.
 
-    if not posts:
-        raise HTTPException(status_code=400, detail="No posts provided for analysis")
-
-    # TODO: Add VADER sentiment, TF-IDF clustering.
-    result: dict[str, object] = {
-        "post_count": len(posts),
-        "topics": [],
-        "sentiment_summary": None,
-        "organism_data": {
-            "accountAgeDays": 0,
-            "topics": [],
-        },
-    }
-
-    if not payload.persist:
-        return result
-
+    CHANGED: this used to run a placeholder stub over only the posts/
+    upload_ids passed in the request body. It now delegates to
+    analysis_service.run_user_analysis(), which pulls every post the
+    user has ever uploaded (via firestore_service.list_all_user_posts),
+    scores sentiment with VADER and topics via the taxonomy classifier,
+    and persists both an aggregate analysis document and per-post
+    sentiment/topic fields. payload.posts / payload.upload_ids are no
+    longer read here -- see the AnalysisRequest comment above.
+    """
     try:
-        saved = firestore_service.save_analysis(
-            user_id=payload.user_id,
-            analysis=result,
-            upload_ids=payload.upload_ids,
-        )
+        return analysis_service.run_user_analysis(payload.user_id, persist=payload.persist)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to save analysis: {exc}") from exc
-
-    return saved
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
 
 
 @app.get("/analyses/{user_id}")
