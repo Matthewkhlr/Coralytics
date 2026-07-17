@@ -1,47 +1,20 @@
-import re
-import uuid
-from collections import defaultdict
+"""
+Firestore access layer.
+
+DB1 raw uploads: raw_data_service
+DB2 analyses: analysis_store_service
+
+This module keeps backward-compatible helpers used by the API layer and
+share/privacy features.
+"""
+
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any
 
 from app.firebase import get_firestore_client
-
-BATCH_SIZE = 400
-_DOC_ID_PATTERN = re.compile(r"[^\w\-.:]+")
-
-
-def _uploads_collection(user_id: str):
-    return get_firestore_client().collection("users").document(user_id).collection("uploads")
-
-
-def _analyses_collection(user_id: str):
-    return get_firestore_client().collection("users").document(user_id).collection("analyses")
-
-
-def _posts_collection(user_id: str, upload_id: str):
-    return _uploads_collection(user_id).document(upload_id).collection("posts")
-
-
-def _sanitize_doc_id(raw_id: str, fallback: str) -> str:
-    doc_id = _DOC_ID_PATTERN.sub("_", raw_id).strip("._")
-    if not doc_id:
-        return fallback
-    return doc_id[:1500]
-
-
-def _commit_batches(user_id: str, upload_id: str, posts: list[dict[str, Any]]) -> None:
-    db = get_firestore_client()
-
-    for index in range(0, len(posts), BATCH_SIZE):
-        batch = db.batch()
-        chunk = posts[index : index + BATCH_SIZE]
-
-        for offset, post in enumerate(chunk):
-            fallback_id = f"{index + offset:06d}"
-            doc_id = _sanitize_doc_id(str(post.get("id", "")), fallback_id)
-            batch.set(_posts_collection(user_id, upload_id).document(doc_id), post)
-
-        batch.commit()
+from app.services import analysis_store_service, ingestion_service, raw_data_service
 
 
 def save_upload_with_posts(
@@ -51,48 +24,116 @@ def save_upload_with_posts(
     *,
     platform: str = "mixed",
     ingest_report: dict[str, Any] | None = None,
+    raw_files: list[dict[str, Any]] | None = None,
+    content_hash: str | None = None,
 ) -> dict[str, Any]:
-    """Persist upload metadata, ingest report, and parsed posts in Firestore."""
-    upload_id = uuid.uuid4().hex
-    now = datetime.now(timezone.utc).isoformat()
+    """Persist a raw upload in DB1. Parsed posts are preview metadata only."""
+    if not raw_files:
+        raise ValueError("raw_files are required for DB1 storage")
+
     comment_types = {"comment", "reply"}
+    comment_count = sum(1 for post in posts if post.get("post_type") in comment_types)
 
-    metadata: dict[str, Any] = {
-        "upload_id": upload_id,
-        "user_id": user_id,
-        "platform": platform,
-        "filename": filename,
-        "post_count": len(posts),
-        "comment_count": sum(1 for post in posts if post.get("post_type") in comment_types),
-        "created_at": now,
-        "parsed_at": now,
-        "ingest_report": ingest_report or {},
-    }
+    upload = raw_data_service.save_raw_upload(
+        user_id=user_id,
+        filename=filename,
+        raw_files=raw_files,
+        platform=platform,
+        ingest_report=ingest_report,
+        content_hash=content_hash,
+    )
 
-    _uploads_collection(user_id).document(upload_id).set(metadata)
-    if posts:
-        _commit_batches(user_id, upload_id, posts)
+    return raw_data_service.update_raw_upload_metadata(
+        user_id,
+        upload["upload_id"],
+        ingest_report=ingest_report,
+        platform=platform,
+        post_count=len(posts),
+        comment_count=comment_count,
+        content_hash=content_hash,
+    )
 
-    return metadata
+
+def find_upload_by_content_hash(user_id: str, content_hash: str) -> dict[str, Any] | None:
+    return raw_data_service.find_upload_by_content_hash(user_id, content_hash)
 
 
 def get_upload_metadata(user_id: str, upload_id: str) -> dict[str, Any]:
-    """Fetch upload metadata from Firestore."""
-    doc_ref = _uploads_collection(user_id).document(upload_id)
-    snapshot = doc_ref.get()
-
-    if not snapshot.exists:
-        raise KeyError(f"Upload not found: {upload_id}")
-
-    data = snapshot.to_dict()
-    assert data is not None
-    return data
+    return raw_data_service.get_raw_upload_metadata(user_id, upload_id)
 
 
 def list_uploads(user_id: str) -> list[dict[str, Any]]:
-    """List all uploads for a user."""
-    snapshots = _uploads_collection(user_id).order_by("created_at", direction="DESCENDING").stream()
-    return [doc.to_dict() for doc in snapshots if doc.exists]
+    return raw_data_service.list_raw_uploads(user_id)
+
+
+def _parse_upload_posts(user_id: str, upload_id: str) -> list[dict[str, Any]]:
+    raw_files = raw_data_service.list_raw_files(user_id, upload_id)
+    if not raw_files:
+        return []
+
+    metadata = get_upload_metadata(user_id, upload_id)
+    posts, _ = ingestion_service.ingest_raw_files(raw_files, require_posts=False)
+    confirmed = str(metadata.get("platform") or "").lower().strip()
+    if confirmed and confirmed not in {"mixed", "sample", "unknown"}:
+        detected = ingestion_service.derive_platform(posts)
+        if detected != confirmed:
+            posts = ingestion_service.force_posts_platform(posts, confirmed)
+    for post in posts:
+        post["_upload_id"] = upload_id
+    return posts
+
+
+def update_upload_platform(user_id: str, upload_id: str, platform: str) -> dict[str, Any]:
+    """Persist a user-confirmed platform label for one upload."""
+    get_upload_metadata(user_id, upload_id)
+    raw_files = raw_data_service.list_raw_files(user_id, upload_id)
+    if not raw_files:
+        raise KeyError(f"Upload not found: {upload_id}")
+
+    hint = platform.lower().strip()
+    posts, ingest_report = ingestion_service.ingest_raw_files(raw_files, require_posts=False)
+    detected = ingestion_service.derive_platform(posts)
+    if detected != hint:
+        posts = ingestion_service.force_posts_platform(posts, hint)
+
+    comment_types = {"comment", "reply"}
+    comment_count = sum(1 for post in posts if post.get("post_type") in comment_types)
+
+    return raw_data_service.update_raw_upload_metadata(
+        user_id,
+        upload_id,
+        platform=hint,
+        ingest_report=ingest_report,
+        post_count=len(posts),
+        comment_count=comment_count,
+    )
+
+
+def _merge_post_insights(
+    posts: list[dict[str, Any]],
+    insights_by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    for post in posts:
+        enriched = dict(post)
+        insight = insights_by_id.get(str(post.get("id")))
+        if insight:
+            enriched.update(insight)
+        merged.append(enriched)
+    return merged
+
+
+def _latest_post_insights(user_id: str) -> dict[str, dict[str, Any]]:
+    latest = analysis_store_service.get_latest_analysis(user_id)
+    if not latest:
+        return {}
+
+    insights: dict[str, dict[str, Any]] = {}
+    for item in latest.get("post_insights") or []:
+        post_id = item.get("id")
+        if post_id:
+            insights[str(post_id)] = item
+    return insights
 
 
 def list_upload_posts(
@@ -102,20 +143,23 @@ def list_upload_posts(
     limit: int = 100,
     start_after: str | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """List parsed posts for an upload with simple cursor pagination."""
+    """List posts parsed from DB1 raw files for one upload."""
     get_upload_metadata(user_id, upload_id)
+    posts = _merge_post_insights(
+        _parse_upload_posts(user_id, upload_id),
+        _latest_post_insights(user_id),
+    )
 
-    collection = _posts_collection(user_id, upload_id)
-    query = collection.order_by("__name__")
     if start_after:
-        start_doc = collection.document(start_after).get()
-        if start_doc.exists:
-            query = query.start_after(start_doc)
+        start_index = next(
+            (index for index, post in enumerate(posts) if str(post.get("id")) == start_after),
+            -1,
+        )
+        posts = posts[start_index + 1 :] if start_index >= 0 else posts
 
-    snapshots = list(query.limit(limit + 1).stream())
-    posts = [doc.to_dict() for doc in snapshots[:limit] if doc.exists]
-    next_cursor = snapshots[limit].id if len(snapshots) > limit else None
-    return posts, next_cursor
+    page = posts[:limit]
+    next_cursor = str(page[-1]["id"]) if len(posts) > limit and page else None
+    return page, next_cursor
 
 
 def save_analysis(
@@ -123,115 +167,158 @@ def save_analysis(
     analysis: dict[str, Any],
     upload_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Persist an analysis result in Firestore."""
-    analysis_id = uuid.uuid4().hex
-    now = datetime.now(timezone.utc).isoformat()
-
-    record: dict[str, Any] = {
-        "analysis_id": analysis_id,
-        "user_id": user_id,
-        "created_at": now,
-        "updated_at": now,
-        "upload_ids": upload_ids or [],
-        **analysis,
-    }
-
-    _analyses_collection(user_id).document(analysis_id).set(record)
-    return record
+    return analysis_store_service.save_analysis(user_id, analysis, upload_ids)
 
 
 def get_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
-    """Fetch a single analysis result."""
-    doc_ref = _analyses_collection(user_id).document(analysis_id)
-    snapshot = doc_ref.get()
-
-    if not snapshot.exists:
-        raise KeyError(f"Analysis not found: {analysis_id}")
-
-    data = snapshot.to_dict()
-    assert data is not None
-    return data
+    return analysis_store_service.get_analysis(user_id, analysis_id)
 
 
 def list_analyses(user_id: str) -> list[dict[str, Any]]:
-    """List all analyses for a user."""
-    snapshots = _analyses_collection(user_id).order_by("created_at", direction="DESCENDING").stream()
-    return [doc.to_dict() for doc in snapshots if doc.exists]
+    return analysis_store_service.list_analyses(user_id)
 
 
-# ---------------------------------------------------------------------------
-# NEW: added for the sentiment/topic analysis pipeline.
-# ---------------------------------------------------------------------------
+def _dedupe_posts_by_id(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the first occurrence of each post id across uploads."""
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for post in posts:
+        post_id = str(post.get("id") or "")
+        if not post_id or post_id in seen:
+            continue
+        seen.add(post_id)
+        unique.append(post)
+    return unique
+
+
+def list_user_posts(
+    user_id: str,
+    *,
+    upload_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Parse raw exports for a user, optionally scoped to upload_ids, deduped by post id."""
+    uploads = list_uploads(user_id)
+    if upload_ids:
+        allowed = set(upload_ids)
+        uploads = [upload for upload in uploads if upload.get("upload_id") in allowed]
+
+    all_posts: list[dict[str, Any]] = []
+    for upload in uploads:
+        upload_id = upload["upload_id"]
+        all_posts.extend(_parse_upload_posts(user_id, upload_id))
+
+    return _dedupe_posts_by_id(all_posts)
 
 
 def list_all_user_posts(user_id: str) -> list[dict[str, Any]]:
-    """Fetch every parsed post across every upload a user has, regardless
-    of platform.
-
-    Each returned post dict is tagged with `_upload_id` (which upload it
-    came from) so callers can write results back to the correct
-    subcollection later. The leading underscore signals this key is
-    metadata added by this function, not part of the original
-    NormalizedPost shape.
-
-    Used by analysis_service.py so "analyze this user" means their whole
-    history (Instagram + LinkedIn + Reddit combined), not just one upload.
-    """
-    all_posts: list[dict[str, Any]] = []
-
-    for upload in list_uploads(user_id):
-        upload_id = upload["upload_id"]
-        # High limit mirrors the pattern main.py already uses in
-        # _posts_from_uploads for the same reason: pull a whole upload's
-        # posts in one go rather than paging for this use case.
-        posts, _ = list_upload_posts(user_id, upload_id, limit=10_000)
-        for post in posts:
-            tagged_post = dict(post)
-            tagged_post["_upload_id"] = upload_id
-            all_posts.append(tagged_post)
-
-    return all_posts
+    """Parse every raw export file in DB1 for a user (deduped by post id)."""
+    return list_user_posts(user_id)
 
 
-def save_post_analysis_results(user_id: str, results: list[dict[str, Any]]) -> None:
-    """Merge sentiment/topic fields onto individual post documents.
+def list_posts_by_topic(
+    user_id: str,
+    topic: str,
+    *,
+    limit: int = 20,
+    platform: str | None = None,
+) -> list[dict[str, Any]]:
+    topic_lower = topic.lower().strip()
+    platform_lower = platform.lower().strip() if platform else None
+    insights = _latest_post_insights(user_id)
+    matched: list[dict[str, Any]] = []
 
-    Each item in `results` must include:
-      - "id": the post's original id (matches the field used when the
-        post was first written, e.g. "instagram:post-0")
-      - "_upload_id": which upload's posts subcollection it lives in
-        (as returned by list_all_user_posts)
-      - any other keys (e.g. "sentiment_label", "sentiment_compound",
-        "topics") are merged onto the existing post document without
-        overwriting the rest of its fields.
+    for post in list_all_user_posts(user_id):
+        enriched = dict(post)
+        insight = insights.get(str(post.get("id")))
+        if insight:
+            enriched.update(insight)
 
-    Uses batched writes grouped by upload_id, following the same
-    BATCH_SIZE pattern as _commit_batches.
-    """
-    db = get_firestore_client()
+        if platform_lower:
+            post_platform = str(enriched.get("platform") or "").lower()
+            if post_platform != platform_lower:
+                continue
 
-    by_upload: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for result in results:
-        by_upload[result["_upload_id"]].append(result)
+        topics = enriched.get("topics") or []
+        if any(str(item).lower() == topic_lower for item in topics):
+            matched.append(enriched)
+        if len(matched) >= limit:
+            break
 
-    for upload_id, upload_results in by_upload.items():
-        for index in range(0, len(upload_results), BATCH_SIZE):
-            batch = db.batch()
-            chunk = upload_results[index : index + BATCH_SIZE]
+    return matched
 
-            for result in chunk:
-                # Recompute the same sanitized doc id used at write-time
-                # (_commit_batches) so this update lands on the right doc.
-                doc_id = _sanitize_doc_id(str(result["id"]), fallback=str(result["id"]))
-                fields = {
-                    key: value
-                    for key, value in result.items()
-                    if key not in {"id", "_upload_id"}
-                }
-                batch.set(
-                    _posts_collection(user_id, upload_id).document(doc_id),
-                    fields,
-                    merge=True,
-                )
 
-            batch.commit()
+def _user_doc(user_id: str):
+    return get_firestore_client().collection("users").document(user_id)
+
+
+def _shares_collection():
+    return get_firestore_client().collection("shares")
+
+
+def get_privacy_settings(user_id: str) -> dict[str, Any]:
+    defaults = {
+        "include_comments": True,
+        "exclude_flagged_from_share": True,
+        "include_post_excerpts_in_share": False,
+        "share_expiry_days": 30,
+        "excluded_platforms": [],
+    }
+    snapshot = _user_doc(user_id).collection("settings").document("privacy").get()
+    if not snapshot.exists:
+        return defaults
+    data = snapshot.to_dict() or {}
+    return {**defaults, **data}
+
+
+def save_privacy_settings(user_id: str, settings: dict[str, Any]) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    record = {**settings, "updated_at": now}
+    _user_doc(user_id).collection("settings").document("privacy").set(record, merge=True)
+    return record
+
+
+def save_evolution_snapshot(user_id: str, analysis_id: str, snapshot: dict[str, Any]) -> None:
+    _user_doc(user_id).collection("evolution_snapshots").document(analysis_id).set(snapshot)
+
+
+def list_evolution_snapshots(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    snapshots = (
+        _user_doc(user_id)
+        .collection("evolution_snapshots")
+        .order_by("created_at", direction="DESCENDING")
+        .limit(limit)
+        .stream()
+    )
+    return [doc.to_dict() for doc in snapshots if doc.exists]
+
+
+def create_share(
+    user_id: str,
+    analysis_id: str,
+    payload: dict[str, Any],
+    *,
+    expires_at: str,
+) -> dict[str, Any]:
+    import uuid
+
+    token = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    record: dict[str, Any] = {
+        "token": token,
+        "user_id": user_id,
+        "analysis_id": analysis_id,
+        "created_at": now,
+        "expires_at": expires_at,
+        "payload": payload,
+    }
+    _shares_collection().document(token).set(record)
+    return record
+
+
+def get_share(token: str) -> dict[str, Any]:
+    snapshot = _shares_collection().document(token).get()
+    if not snapshot.exists:
+        raise KeyError(f"Share not found: {token}")
+    data = snapshot.to_dict()
+    assert data is not None
+    return data

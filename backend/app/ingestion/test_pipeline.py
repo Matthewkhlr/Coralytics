@@ -171,6 +171,54 @@ def test_separate_mode_splits_posts_and_comments() -> None:
     print("PASS: separate_mode_splits_posts_and_comments")
 
 
+def test_instagram_label_values_posts() -> None:
+    from app.ingestion.instagram import parse_instagram_export
+
+    data = [
+        {
+            "timestamp": 1715940166,
+            "media": [],
+            "label_values": [
+                {
+                    "label": "Caption",
+                    "value": "ORD LOH!!! Finally shipped.",
+                },
+                {
+                    "label": "Update time",
+                    "timestamp_value": 1723056145,
+                },
+            ],
+        }
+    ]
+    posts = parse_instagram_export(data, id_prefix="posts")
+    assert len(posts) == 1
+    assert "ORD LOH" in posts[0].content
+    print("PASS: instagram_label_values_posts")
+
+
+def test_zip_skips_oversized_member() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        zip_path = Path(tmp) / "mixed.zip"
+        root = Path(tmp) / "export"
+        _write(
+            root / "media" / "posts_1.json",
+            json.dumps([{"title": "still ingested", "creation_timestamp": 1700000000}]),
+        )
+        big = root / "media" / "huge_posts.json"
+        _write(big, "[" + ("1," * (MAX_FILE_SIZE // 2)) + "1]")
+
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for path in root.rglob("*"):
+                if path.is_file():
+                    zf.write(path, path.relative_to(root).as_posix())
+
+        result = ingest_path(zip_path)
+        assert len(result.posts) == 1
+        assert result.posts[0].content == "still ingested"
+        assert any("Skipped oversized" in w for w in result.warnings)
+    print("PASS: zip_skips_oversized_member")
+
+
 def main() -> None:
     test_zip_slip_rejected()
     test_oversized_file_skipped()
@@ -178,6 +226,8 @@ def main() -> None:
     test_corrupt_and_unknown_files_dont_abort_batch()
     test_private_paths_excluded()
     test_separate_mode_splits_posts_and_comments()
+    test_instagram_label_values_posts()
+    test_zip_skips_oversized_member()
     print("\nAll checks passed.")
 
 

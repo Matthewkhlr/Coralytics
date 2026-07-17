@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "firebase:emulators": "firebase emulators:start --only firestore",
+    "firebase:emulators": "firebase emulators:start --only firestore,auth",
     "firebase:emulators:all": "firebase emulators:start --only firestore,hosting,auth",
     "firebase:deploy:rules": "firebase deploy --only firestore:rules",
     "firebase:deploy:hosting": "firebase deploy --only hosting",

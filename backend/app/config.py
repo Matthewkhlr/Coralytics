@@ -32,7 +32,7 @@ class Settings:
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.google_application_credentials
         origins = os.getenv("CORS_ORIGINS", "http://localhost:5173")
         self.cors_origins = [origin.strip() for origin in origins.split(",") if origin.strip()]
-        self.max_upload_size_bytes = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", str(25 * 1024 * 1024)))
+        self.max_upload_size_bytes = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", str(100 * 1024 * 1024)))
 
     @property
     def use_emulators(self) -> bool:
@@ -44,6 +44,10 @@ class Settings:
         if self.use_emulators:
             return True
         return os.getenv("SEED_ENDPOINT_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+
+    @property
+    def auth_required(self) -> bool:
+        return os.getenv("AUTH_DISABLED", "").strip().lower() not in {"1", "true", "yes"}
 
 
 @lru_cache

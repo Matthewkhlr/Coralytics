@@ -42,6 +42,41 @@ def _fix_mojibake(text: str) -> str:
         return text
 
 
+def _walk_label_values(node: Any) -> list[dict[str, Any]]:
+    """Flatten nested Instagram `label_values` trees from newer exports."""
+    items: list[dict[str, Any]] = []
+    if isinstance(node, list):
+        for item in node:
+            items.extend(_walk_label_values(item))
+    elif isinstance(node, dict):
+        items.append(node)
+        for key in ("label_values", "dict"):
+            child = node.get(key)
+            if child is not None:
+                items.extend(_walk_label_values(child))
+    return items
+
+
+def _extract_caption_from_label_values(entry: dict[str, Any]) -> str:
+    for item in _walk_label_values(entry.get("label_values")):
+        label = item.get("label")
+        if label == "Caption":
+            value = item.get("value")
+            if isinstance(value, str) and value.strip():
+                return value
+        if label == "Media":
+            media_items = item.get("media")
+            if isinstance(media_items, list):
+                for media in media_items:
+                    if not isinstance(media, dict):
+                        continue
+                    for key in ("title", "caption"):
+                        value = media.get(key)
+                        if isinstance(value, str) and value.strip():
+                            return value
+    return ""
+
+
 def _extract_caption(entry: dict[str, Any]) -> str:
     # Prefer a top-level "title" / "caption" if present and non-empty.
     for key in ("title", "caption"):
@@ -60,6 +95,11 @@ def _extract_caption(entry: dict[str, Any]) -> str:
                 if isinstance(value, str) and value.strip():
                     return value
 
+    # Newer Instagram exports nest captions under label_values.
+    label_caption = _extract_caption_from_label_values(entry)
+    if label_caption.strip():
+        return label_caption
+
     return ""
 
 
@@ -67,11 +107,23 @@ def _extract_timestamp(entry: dict[str, Any]) -> Any:
     if "creation_timestamp" in entry:
         return entry["creation_timestamp"]
 
+    if "timestamp" in entry:
+        return entry["timestamp"]
+
     media = entry.get("media")
     if isinstance(media, list):
         for item in media:
             if isinstance(item, dict) and "creation_timestamp" in item:
                 return item["creation_timestamp"]
+
+    for item in _walk_label_values(entry.get("label_values")):
+        if item.get("label") == "Update time" and "timestamp_value" in item:
+            return item["timestamp_value"]
+        media_items = item.get("media")
+        if isinstance(media_items, list):
+            for media in media_items:
+                if isinstance(media, dict) and "creation_timestamp" in media:
+                    return media["creation_timestamp"]
 
     return None
 

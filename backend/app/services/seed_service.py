@@ -35,9 +35,12 @@ def seed_sample_data(
     run_analysis: bool = True,
     sample_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Ingest all bundled sample exports and optionally persist a real analysis."""
+    """Ingest bundled sample exports into DB1 and optionally run NLP analysis to DB2."""
     zip_bytes = build_sample_data_zip(sample_dir)
-    posts, ingest_report = ingestion_service.ingest_upload(zip_bytes, SAMPLE_ZIP_NAME)
+    raw_files, extract_warnings = ingestion_service.extract_raw_upload(zip_bytes, SAMPLE_ZIP_NAME)
+    posts, ingest_report = ingestion_service.ingest_raw_files(raw_files)
+    if extract_warnings:
+        ingest_report.setdefault("warnings", []).extend(extract_warnings)
     platform = ingestion_service.derive_platform(posts)
 
     upload = firestore_service.save_upload_with_posts(
@@ -46,6 +49,7 @@ def seed_sample_data(
         posts=posts,
         platform=platform,
         ingest_report=ingest_report,
+        raw_files=raw_files,
     )
 
     result: dict[str, Any] = {
@@ -58,9 +62,9 @@ def seed_sample_data(
         "ingest_report": upload.get("ingest_report", {}),
     }
 
-    if run_analysis:
+    if run_analysis and posts:
         analysis = analysis_service.run_user_analysis(user_id, persist=True)
-        result["analysis_id"] = analysis["analysis_id"]
+        result["analysis_id"] = analysis.get("analysis_id")
         result["analysis"] = analysis
 
     return result

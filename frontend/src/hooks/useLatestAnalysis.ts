@@ -8,7 +8,7 @@ export type AnalysisLoadState =
   | { status: "success"; analysis: Analysis; error: null }
   | { status: "error"; analysis: null; error: string };
 
-export function useLatestAnalysis(userId: string) {
+export function useLatestAnalysis(userId: string | undefined) {
   const [state, setState] = useState<AnalysisLoadState>({
     status: "loading",
     analysis: null,
@@ -16,6 +16,11 @@ export function useLatestAnalysis(userId: string) {
   });
 
   const load = useCallback(async () => {
+    if (!userId) {
+      setState({ status: "empty", analysis: null, error: null });
+      return;
+    }
+
     setState({ status: "loading", analysis: null, error: null });
 
     try {

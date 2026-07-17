@@ -66,6 +66,12 @@ export const coralV2: OrganismGenerator = (scene, data) => {
     );
     branch.rotation.z = Math.PI / 2.9;
     branch.rotation.y = -angle;
+    branch.userData = {
+      topicName: topic.name,
+      postVolume: topic.postVolume,
+      sentiment: topic.sentiment,
+      isBranch: true,
+    };
     coral.add(branch);
   });
 

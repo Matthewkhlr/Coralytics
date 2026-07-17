@@ -28,7 +28,9 @@ def init_firebase() -> None:
 
     if settings.use_emulators:
         if not os.getenv("FIRESTORE_EMULATOR_HOST"):
-            os.environ["FIRESTORE_EMULATOR_HOST"] = "localhost:8080"
+            os.environ["FIRESTORE_EMULATOR_HOST"] = "127.0.0.1:8080"
+        if not os.getenv("FIREBASE_AUTH_EMULATOR_HOST"):
+            os.environ["FIREBASE_AUTH_EMULATOR_HOST"] = "127.0.0.1:9099"
 
         firebase_admin.initialize_app(
             _EmulatorCredentials(),

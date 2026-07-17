@@ -80,7 +80,15 @@ def detect_json_kind(data: Any) -> str:
         return "unknown"
 
     if any("string_map_data" in entry for entry in sample):
-        return "instagram_comments"
+        if any(
+            isinstance(entry.get("string_map_data"), dict)
+            and "Comment" in entry["string_map_data"]
+            for entry in sample
+        ):
+            return "instagram_comments"
+
+    if any("label_values" in entry for entry in sample):
+        return "instagram_posts"
 
     if any(
         "media" in entry or ("title" in entry and "creation_timestamp" in entry)
