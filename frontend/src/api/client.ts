@@ -3,7 +3,11 @@ import type {
   AnalysesResponse,
   AnalyzeRequest,
   Analysis,
+  CreateShareRequest,
   HealthResponse,
+  PostSummary,
+  PrivacySettings,
+  ShareRecord,
   UploadResponse,
   UploadsResponse,
 } from "./types";
@@ -18,15 +22,30 @@ export class ApiError extends Error {
   }
 }
 
+let authTokenProvider: (() => Promise<string | null>) | null = null;
+
+export function setAuthTokenProvider(provider: () => Promise<string | null>) {
+  authTokenProvider = provider;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+
+  if (authTokenProvider) {
+    const token = await authTokenProvider();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  }
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
-      headers: {
-        Accept: "application/json",
-        ...init?.headers,
-      },
+      headers,
     });
   } catch {
     throw new ApiError(
@@ -48,6 +67,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       // Response body was not JSON.
     }
 
+    if (response.status === 401) {
+      detail = "Please login again.";
+    }
+
     if (response.status >= 500 && detail === "Internal Server Error") {
       detail =
         "API server error. Check backend logs and that FIRESTORE_EMULATOR_HOST is set for local dev.";
@@ -67,15 +90,47 @@ export function listAnalyses(userId: string) {
   return apiFetch<AnalysesResponse>(`/analyses/${encodeURIComponent(userId)}`);
 }
 
+export function getAnalysis(userId: string, analysisId: string) {
+  return apiFetch<Analysis>(
+    `/analyses/${encodeURIComponent(userId)}/${encodeURIComponent(analysisId)}`,
+  );
+}
+
 export function listUploads(userId: string) {
   return apiFetch<UploadsResponse>(`/uploads/${encodeURIComponent(userId)}`);
 }
 
-export function uploadExport(userId: string, file: File, platform?: string) {
+export function updateUploadPlatform(userId: string, uploadId: string, platform: string) {
+  return apiFetch<UploadResponse>(
+    `/uploads/${encodeURIComponent(userId)}/${encodeURIComponent(uploadId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platform }),
+    },
+  );
+}
+
+export type UploadExportOptions = {
+  platform?: string;
+  runAnalysis?: boolean;
+};
+
+export function uploadExport(
+  userId: string,
+  file: File,
+  options?: string | UploadExportOptions,
+) {
+  const opts: UploadExportOptions =
+    typeof options === "string" ? { platform: options } : (options ?? {});
+
   const body = new FormData();
   body.append("user_id", userId);
   body.append("file", file);
-  if (platform) body.append("platform", platform);
+  if (opts.platform) body.append("platform", opts.platform);
+  if (opts.runAnalysis !== undefined) {
+    body.append("run_analysis", opts.runAnalysis ? "true" : "false");
+  }
 
   return apiFetch<UploadResponse>("/uploads", {
     method: "POST",
@@ -92,6 +147,49 @@ export function analyzeUploads(request: AnalyzeRequest) {
       upload_ids: request.upload_ids,
       posts: [],
       persist: request.persist ?? true,
+      name: request.name?.trim() || null,
     }),
   });
+}
+
+export function listPostsByTopic(
+  userId: string,
+  topic: string,
+  limit = 20,
+  platform?: string,
+) {
+  const params = new URLSearchParams({ topic, limit: String(limit) });
+  if (platform) params.set("platform", platform);
+  return apiFetch<{ posts: PostSummary[] }>(
+    `/uploads/${encodeURIComponent(userId)}/posts/by-topic?${params}`,
+  );
+}
+
+export function getPrivacySettings(userId: string) {
+  return apiFetch<PrivacySettings>(
+    `/users/${encodeURIComponent(userId)}/privacy-settings`,
+  );
+}
+
+export function updatePrivacySettings(userId: string, settings: Partial<PrivacySettings>) {
+  return apiFetch<PrivacySettings>(
+    `/users/${encodeURIComponent(userId)}/privacy-settings`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settings),
+    },
+  );
+}
+
+export function createShare(request: CreateShareRequest) {
+  return apiFetch<ShareRecord>("/shares", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+export function getShare(token: string) {
+  return apiFetch<ShareRecord>(`/shares/${encodeURIComponent(token)}`);
 }

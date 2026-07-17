@@ -7,7 +7,7 @@ export type UploadsLoadState =
   | { status: "success"; uploads: Upload[]; error: null }
   | { status: "error"; uploads: Upload[]; error: string };
 
-export function useUploads(userId: string) {
+export function useUploads(userId: string | undefined) {
   const [state, setState] = useState<UploadsLoadState>({
     status: "loading",
     uploads: [],
@@ -15,6 +15,11 @@ export function useUploads(userId: string) {
   });
 
   const load = useCallback(async () => {
+    if (!userId) {
+      setState({ status: "success", uploads: [], error: null });
+      return;
+    }
+
     setState((prev) => ({ ...prev, status: "loading", error: null }));
 
     try {

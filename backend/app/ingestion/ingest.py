@@ -96,9 +96,8 @@ from .schema import NormalizedPost, finalize_posts
 # Maximum number of entries allowed inside an uploaded zip.
 MAX_FILES = 5_000
 
-# Maximum size (bytes) of any single file, zipped or not. 25 MB is far
-# larger than any realistic posts/comments export file.
-MAX_FILE_SIZE = 25 * 1024 * 1024
+# Maximum size (bytes) of any single file, zipped or not.
+MAX_FILE_SIZE = 100 * 1024 * 1024
 
 # Maximum total *uncompressed* size (bytes) a zip is allowed to expand to.
 MAX_TOTAL_SIZE = 500 * 1024 * 1024
@@ -123,6 +122,11 @@ _EXCLUDED_PATH_KEYWORDS = (
     "ad_preferences",
     "advertis",
     "personal_information",
+    "information_about_you",
+    "recent_searches",
+    "locations_of_interest",
+    "profile_searches",
+    "word_or_phrase_searches",
     "security_and_login",
     "login_",
     "device_information",
@@ -157,7 +161,10 @@ _EXCLUDED_PATH_KEYWORDS = (
     "phonenum",
     "positions",
     "private_identity",
-    "profile",
+    "profile_based",
+    "profile_photos",
+    "profile summary",
+    "profile.csv",
     "projects",
     "registration",
     "rich_media",
@@ -238,6 +245,16 @@ class IngestResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class RawFileRecord:
+    """A single raw export file kept in DB1 before NLP processing."""
+
+    path: str
+    content: str
+    content_type: str
+    size_bytes: int
+
+
 # --- Zip handling (security) -------------------------------------------------
 
 
@@ -275,16 +292,18 @@ def _is_safe_member_path(name: str) -> bool:
     return True
 
 
-def safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
-    """Extract `zip_path` into `dest_dir`, after validating that it's safe
-    to do so.
+def safe_extract_zip(zip_path: Path, dest_dir: Path) -> list[str]:
+    """Extract safe, in-limit zip members into `dest_dir`.
 
-    Raises `IngestError` if the zip is unsafe (path traversal) or exceeds
-    the configured size/file-count limits. Never partially trusts zip
-    metadata for the final check -- after extraction, every extracted
-    path is re-verified to be inside `dest_dir`.
+    Skips excluded paths and oversized entries instead of failing the whole
+    archive. Returns human-readable warnings for skipped members.
+
+    Raises `IngestError` only for unsafe paths (zip slip) or too many entries.
     """
     dest_dir = dest_dir.resolve()
+    warnings: list[str] = []
+    extracted = 0
+    excluded_parseable = 0
 
     with zipfile.ZipFile(zip_path) as zf:
         infos = [info for info in zf.infolist() if not info.is_dir()]
@@ -299,26 +318,49 @@ def safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
             if not _is_safe_member_path(info.filename):
                 raise IngestError(f"Unsafe path in zip: {info.filename!r}")
 
+            rel_path = Path(info.filename)
+            suffix = rel_path.suffix.lower()
+            if _is_excluded_path(rel_path):
+                if suffix in _PARSEABLE_EXTENSIONS and info.file_size > 0:
+                    excluded_parseable += 1
+                continue
+
+            if suffix not in _PARSEABLE_EXTENSIONS:
+                continue
+
+            if info.file_size == 0:
+                continue
+
             if info.file_size > MAX_FILE_SIZE:
-                raise IngestError(
-                    f"File in zip too large: {info.filename!r} "
-                    f"({info.file_size} bytes > {MAX_FILE_SIZE})"
+                limit_mb = MAX_FILE_SIZE // (1024 * 1024)
+                warnings.append(
+                    f"Skipped oversized file in zip: {info.filename!r} "
+                    f"({info.file_size} bytes > {limit_mb} MB limit)"
                 )
+                continue
 
-            total_size += info.file_size
-            if total_size > MAX_TOTAL_SIZE:
-                raise IngestError(
+            if total_size + info.file_size > MAX_TOTAL_SIZE:
+                warnings.append(
                     f"Zip exceeds maximum total extracted size "
-                    f"({total_size} bytes > {MAX_TOTAL_SIZE})"
+                    f"({MAX_TOTAL_SIZE} bytes); remaining entries skipped"
                 )
+                break
 
-        zf.extractall(dest_dir)
+            zf.extract(info, dest_dir)
+            total_size += info.file_size
+            extracted += 1
 
     # Defense in depth: confirm nothing escaped dest_dir after extraction.
-    for info in infos:
-        extracted = (dest_dir / info.filename).resolve()
-        if dest_dir not in extracted.parents and extracted != dest_dir:
-            raise IngestError(f"Zip-slip detected for {info.filename!r}")
+    for path in dest_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if dest_dir not in path.resolve().parents and path.resolve() != dest_dir:
+            raise IngestError(f"Zip-slip detected for {path.name!r}")
+
+    if extracted == 0 and excluded_parseable > 0:
+        warnings.append("METADATA_ONLY_EXPORT")
+
+    return warnings
 
 
 # --- Per-file parsing (fallback) ---------------------------------------------
@@ -369,6 +411,188 @@ def _parse_file(path: Path) -> tuple[list[NormalizedPost], str, Optional[str]]:
     return posts, kind, warning
 
 
+def _content_type_for_suffix(suffix: str) -> str:
+    if suffix == ".json":
+        return "application/json"
+    if suffix == ".csv":
+        return "text/csv"
+    return "text/plain"
+
+
+def _read_raw_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8-sig", errors="replace")
+
+
+def _parse_file_content(
+    path: str,
+    content: str,
+    size: int,
+) -> tuple[list[NormalizedPost], str, Optional[str]]:
+    """Parse a single in-memory file. Never raises."""
+    if size == 0:
+        return [], "empty", None
+
+    if size > MAX_FILE_SIZE:
+        return (
+            [],
+            "skipped",
+            f"Skipped {path}: {size} bytes exceeds per-file limit ({MAX_FILE_SIZE})",
+        )
+
+    suffix = Path(path).suffix.lower()
+    if suffix not in _PARSEABLE_EXTENSIONS:
+        return [], "ignored", None
+
+    try:
+        if suffix == ".json":
+            data = json.loads(content)
+            posts, kind = parse_json_auto(data, id_prefix=Path(path).stem)
+        else:
+            posts, kind = parse_csv_auto(content, filename=Path(path).name)
+    except json.JSONDecodeError as exc:
+        return [], "error", f"Invalid JSON in {path}: {exc}"
+    except UnicodeDecodeError as exc:
+        return [], "error", f"Could not decode {path}: {exc}"
+    except Exception as exc:
+        return [], "error", f"Unexpected error parsing {path}: {exc}"
+
+    warning = None
+    if not posts and kind not in ("linkedin_skip", "reddit_skip", "ignored", "empty", "excluded"):
+        warning = f"No posts/comments recognized in {path} (detected kind: {kind})"
+
+    return posts, kind, warning
+
+
+def _collect_raw_files_from_tree(root: Path) -> list[RawFileRecord]:
+    records: list[RawFileRecord] = []
+
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+
+        if len(records) >= MAX_FILES:
+            break
+
+        rel_path = path.relative_to(root)
+        if _is_excluded_path(rel_path):
+            continue
+
+        suffix = path.suffix.lower()
+        if suffix not in _PARSEABLE_EXTENSIONS:
+            continue
+
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+
+        if size == 0 or size > MAX_FILE_SIZE:
+            continue
+
+        records.append(
+            RawFileRecord(
+                path=str(rel_path),
+                content=_read_raw_text(path),
+                content_type=_content_type_for_suffix(suffix),
+                size_bytes=size,
+            )
+        )
+
+    return records
+
+
+def collect_raw_files(input_path: str | Path) -> tuple[list[RawFileRecord], list[str]]:
+    """Extract raw parseable export files from an upload path (zip, folder, or file)."""
+    input_path = Path(input_path)
+    warnings: list[str] = []
+
+    if not input_path.exists():
+        warnings.append(f"Input path does not exist: {input_path}")
+        return [], warnings
+
+    with TemporaryDirectory(prefix="coralytics-raw-") as tmp:
+        if input_path.is_file() and input_path.suffix.lower() == ".zip":
+            extract_dir = Path(tmp) / "extracted"
+            extract_dir.mkdir()
+            try:
+                zip_warnings = safe_extract_zip(input_path, extract_dir)
+                warnings.extend(zip_warnings)
+            except IngestError as exc:
+                warnings.append(str(exc))
+                return [], warnings
+            return _collect_raw_files_from_tree(extract_dir), warnings
+
+        if input_path.is_dir():
+            return _collect_raw_files_from_tree(input_path), warnings
+
+        rel_path = Path(input_path.name)
+        if _is_excluded_path(rel_path):
+            warnings.append("METADATA_ONLY_EXPORT")
+            return [], warnings
+
+        suffix = input_path.suffix.lower()
+        if suffix not in _PARSEABLE_EXTENSIONS:
+            warnings.append(f"Unsupported file type for raw storage: {input_path.name}")
+            return [], warnings
+
+        try:
+            size = input_path.stat().st_size
+        except OSError as exc:
+            warnings.append(f"Could not stat {input_path}: {exc}")
+            return [], warnings
+
+        if size == 0:
+            return [], warnings
+
+        if size > MAX_FILE_SIZE:
+            warnings.append(
+                f"Skipped {input_path.name}: {size} bytes exceeds per-file limit ({MAX_FILE_SIZE})"
+            )
+            return [], warnings
+
+        return [
+            RawFileRecord(
+                path=input_path.name,
+                content=_read_raw_text(input_path),
+                content_type=_content_type_for_suffix(suffix),
+                size_bytes=size,
+            )
+        ], warnings
+
+
+def ingest_raw_records(files: list[RawFileRecord]) -> IngestResult:
+    """Parse normalized posts from raw export files stored in DB1."""
+    result = IngestResult()
+    all_posts: list[NormalizedPost] = []
+
+    for record in sorted(files, key=lambda item: item.path):
+        if len(result.files) >= MAX_FILES:
+            result.warnings.append(
+                f"Reached max file count ({MAX_FILES}); remaining files skipped"
+            )
+            break
+
+        rel_path = Path(record.path)
+        if _is_excluded_path(rel_path):
+            result.files.append(FileReport(record.path, "excluded", 0))
+            continue
+
+        posts, kind, warning = _parse_file_content(
+            record.path,
+            record.content,
+            record.size_bytes,
+        )
+        if warning:
+            result.warnings.append(warning)
+        if posts:
+            all_posts.extend(posts)
+
+        result.files.append(FileReport(record.path, kind, len(posts)))
+
+    result.posts = finalize_posts(all_posts)
+    return result
+
+
 # --- Top-level entry point -----------------------------------------------------
 
 
@@ -396,7 +620,7 @@ def ingest_path(input_path: str | Path) -> IngestResult:
             extract_dir = Path(tmp) / "extracted"
             extract_dir.mkdir()
             try:
-                safe_extract_zip(input_path, extract_dir)
+                result.warnings.extend(safe_extract_zip(input_path, extract_dir))
             except IngestError as exc:
                 result.warnings.append(str(exc))
                 return result

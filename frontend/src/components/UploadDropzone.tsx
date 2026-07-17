@@ -1,14 +1,20 @@
 import { useCallback, useRef, useState } from "react";
 import { CloudUpload, FileArchive } from "lucide-react";
-
-const ACCEPTED_TYPES = ".zip,.json,.csv";
+import { cn } from "@/lib/utils";
 
 type UploadDropzoneProps = {
   disabled?: boolean;
+  accept?: string;
+  hint?: string;
   onFileSelected: (file: File) => void;
 };
 
-export function UploadDropzone({ disabled = false, onFileSelected }: UploadDropzoneProps) {
+export function UploadDropzone({
+  disabled = false,
+  accept = ".json,.txt,.csv",
+  hint = "Supports .json, .txt, and .csv only",
+  onFileSelected,
+}: UploadDropzoneProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -23,7 +29,11 @@ export function UploadDropzone({ disabled = false, onFileSelected }: UploadDropz
 
   return (
     <div
-      className={`upload-dropzone${isDragging ? " upload-dropzone--active" : ""}${disabled ? " upload-dropzone--disabled" : ""}`}
+      className={cn(
+        "border-2 border-dashed rounded-xl p-8 text-center transition",
+        isDragging ? "border-accent/60 bg-accent/5" : "border-border hover:border-accent/60",
+        disabled && "opacity-50 pointer-events-none",
+      )}
       onDragEnter={(event) => {
         event.preventDefault();
         if (!disabled) setIsDragging(true);
@@ -45,19 +55,19 @@ export function UploadDropzone({ disabled = false, onFileSelected }: UploadDropz
       <input
         ref={inputRef}
         type="file"
-        accept={ACCEPTED_TYPES}
+        accept={accept}
         hidden
         disabled={disabled}
         onChange={(event) => handleFiles(event.target.files)}
       />
-      <CloudUpload size={36} aria-hidden="true" />
-      <p className="dropzone-title">Drop your export here</p>
-      <p className="dropzone-hint">Supports .zip, .json, and .csv platform exports</p>
+      <CloudUpload className="mx-auto text-accent" size={36} aria-hidden="true" />
+      <p className="mt-3 font-medium">Drop your export here</p>
+      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
       <button
-        className="primary-action"
         type="button"
         disabled={disabled}
         onClick={() => inputRef.current?.click()}
+        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition disabled:opacity-50"
       >
         <FileArchive size={17} />
         <span>Choose file</span>

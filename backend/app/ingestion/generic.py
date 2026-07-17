@@ -22,7 +22,11 @@ from .schema import NormalizedPost, Platform, PostType, make_id, safe_build_post
 HASHTAG_RE = re.compile(r"#(\w+)")
 
 
-def parse_generic_posts(data: list[dict[str, Any]]) -> list[NormalizedPost]:
+def parse_generic_posts(
+    data: list[dict[str, Any]],
+    *,
+    default_platform: str = "sample",
+) -> list[NormalizedPost]:
     """Parse a list of simple {platform, content, created_at} dicts.
 
     Useful for:
@@ -30,6 +34,9 @@ def parse_generic_posts(data: list[dict[str, Any]]) -> list[NormalizedPost]:
       - hand-written sample/demo datasets
       - tests for the rest of the pipeline that don't care about
         real-export quirks
+
+    `default_platform` is used when an entry omits `platform` (e.g. the
+    user picked a platform after auto-detect failed).
     """
     posts: list[NormalizedPost] = []
 
@@ -44,11 +51,14 @@ def parse_generic_posts(data: list[dict[str, Any]]) -> list[NormalizedPost]:
         if not content:
             continue
 
-        platform_raw = (entry.get("platform") or "sample").lower()
+        platform_raw = (entry.get("platform") or default_platform or "sample").lower()
         try:
             platform = Platform(platform_raw)
         except ValueError:
-            platform = Platform.sample
+            try:
+                platform = Platform(default_platform.lower())
+            except ValueError:
+                platform = Platform.sample
 
         raw_id = entry.get("id") or str(index)
 
