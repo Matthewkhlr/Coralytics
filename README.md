@@ -72,7 +72,7 @@ java -version        # must be 21+
 
 ## Quick start (local)
 
-You need **four terminals** running at once: emulator → backend → seed (once) → frontend.
+You need **three long-running terminals**: Firestore emulator, backend API, and frontend dev server. Run the seed command once in a fourth terminal only when you need sample data.
 
 ### 0. One-time setup
 
@@ -87,7 +87,15 @@ py -3 -m venv .venv            # Windows (use python3 on macOS/Linux)
 pip install -r requirements.txt
 ```
 
-Set `FIREBASE_PROJECT_ID=coralytics-c8767` in `.env` (must match `.firebaserc`).
+The backend and frontend both read the repo-root `.env` file:
+
+```env
+FIREBASE_PROJECT_ID=coralytics-c8767
+FIRESTORE_EMULATOR_HOST=localhost:8080
+CORS_ORIGINS=http://localhost:5173
+```
+
+`FIREBASE_PROJECT_ID` should match `.firebaserc`. `FIRESTORE_EMULATOR_HOST` tells the backend to write to your local Firestore emulator instead of cloud Firestore.
 
 ### Terminal 1 — Firestore emulator (repo root)
 
@@ -97,6 +105,7 @@ npm run firebase:emulators
 
 - Emulator UI: http://localhost:4000
 - Firestore listens on `localhost:8080`
+- Local data is stored in the emulator, not Google Cloud. If the emulator is reset, run the seed command again.
 
 > **Requires JDK 21+.** If you see `firebase-tools no longer supports Java version before 21`, install a newer JDK from [Adoptium](https://adoptium.net/) and verify with `java -version`.
 
@@ -119,7 +128,7 @@ uvicorn app.main:app --reload
 npm run seed
 ```
 
-Loads all files in `sample_data/` (16 normalized posts, mixed platforms) and creates a stub analysis for `demo-user`.
+Loads all files in `backend/app/ingestion/sample_data/`, saves normalized posts to Firestore, runs the analysis pipeline, and creates persisted coral data for `demo-user`.
 
 View in Emulator UI: http://localhost:4000 → `users` → `demo-user`
 
@@ -134,6 +143,14 @@ npm run dev
 - API calls go to `/api/*` → Vite proxies to `http://localhost:8000`
 
 A service account key is **not** required for emulator-only work.
+
+### Local run order
+
+1. Start Firestore emulator: `npm run firebase:emulators`
+2. Start backend: `cd backend && uvicorn app.main:app --reload`
+3. Start frontend: `cd frontend && npm run dev`
+4. Seed once if needed: `npm run seed`
+5. Open http://localhost:5173
 
 ## Frontend
 

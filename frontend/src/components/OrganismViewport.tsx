@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { coralV3 } from "../three/generators/coralV3";
+import { coralV4 } from "../three/generators/coralV4";
 import type { OrganismData, OrganismGenerator } from "../three/organismTypes";
 
-const useGenerator: OrganismGenerator = coralV3;
+const useGenerator: OrganismGenerator = coralV4;
 
 const clock = new THREE.Clock();
 const pulseSpeed = 1.2;

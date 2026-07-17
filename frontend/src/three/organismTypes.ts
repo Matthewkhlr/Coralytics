@@ -7,9 +7,18 @@ export type OrganismTopic = {
   sentiment: number;
 };
 
+export type OrganismPost = {
+  id: string;
+  created_at: string | null;
+  sentiment_label?: "positive" | "neutral" | "negative";
+  sentiment_compound?: number;
+  topics?: string[];
+};
+
 export type OrganismData = {
   accountAgeDays: number;
   topics: OrganismTopic[];
+  posts: OrganismPost[];
 };
 
 export type OrganismGenerator = (

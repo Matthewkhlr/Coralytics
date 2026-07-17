@@ -26,6 +26,7 @@ Usage (from the API layer, once wired into /analyze):
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime, timezone
 from typing import Any
 
 from app.services import firestore_service, sentiment_service, topic_service
@@ -37,7 +38,7 @@ def _empty_result(user_id: str) -> dict[str, Any]:
         "post_count": 0,
         "sentiment_summary": None,
         "topics": [],
-        "organism_data": {"accountAgeDays": 0, "topics": []},
+        "organism_data": {"accountAgeDays": 0, "topics": [], "posts": []},
     }
 
 
@@ -56,6 +57,34 @@ def _sentiment_breakdown(scored_posts: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _parse_created_at(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _account_age_days(posts: list[dict[str, Any]]) -> int:
+    created_dates = [
+        parsed
+        for parsed in (_parse_created_at(post.get("created_at")) for post in posts)
+        if parsed is not None
+    ]
+    if not created_dates:
+        return 0
+
+    oldest = min(created_dates)
+    return max(0, (datetime.now(timezone.utc) - oldest).days)
+
+
 def run_user_analysis(user_id: str, *, persist: bool = True) -> dict[str, Any]:
     """Run sentiment + topic analysis over a user's ENTIRE post history
     (every upload, every platform), and optionally persist the results.
@@ -72,17 +101,35 @@ def run_user_analysis(user_id: str, *, persist: bool = True) -> dict[str, Any]:
 
     sentiment_summary = _sentiment_breakdown(scored)
     top_topics = topic_service.aggregate_topics(topic_results, top_n=3)
-    top_topics_payload = [{"name": name, "count": count} for name, count in top_topics]
+    top_topics_payload = [
+        {"name": name, "count": count, "postVolume": count}
+        for name, count in top_topics
+    ]
+
+    scored_by_id = {row["id"]: row for row in scored}
+    topics_by_id = {row["id"]: row["topics"] for row in topic_results}
+    organism_posts = []
+    for post in posts:
+        post_id = post.get("id")
+        sentiment = scored_by_id.get(post_id, {})
+        organism_posts.append(
+            {
+                "id": post_id,
+                "created_at": post.get("created_at"),
+                "sentiment_label": sentiment.get("label"),
+                "sentiment_compound": sentiment.get("compound"),
+                "topics": topics_by_id.get(post_id, []),
+            }
+        )
 
     result: dict[str, Any] = {
         "post_count": len(posts),
         "sentiment_summary": sentiment_summary,
         "topics": top_topics_payload,
         "organism_data": {
-            # TODO: compute from the earliest created_at across posts once
-            # that's needed for the 3D model's growth-over-time mapping.
-            "accountAgeDays": 0,
+            "accountAgeDays": _account_age_days(posts),
             "topics": top_topics_payload,
+            "posts": organism_posts,
         },
     }
 
@@ -96,9 +143,6 @@ def run_user_analysis(user_id: str, *, persist: bool = True) -> dict[str, Any]:
     # matched by id (both scored and topic_results are keyed by post id,
     # produced in the same order as `posts` but joined here by id to be
     # safe regardless of ordering).
-    scored_by_id = {row["id"]: row for row in scored}
-    topics_by_id = {row["id"]: row["topics"] for row in topic_results}
-
     per_post_updates = []
     for post in posts:
         post_id = post.get("id")

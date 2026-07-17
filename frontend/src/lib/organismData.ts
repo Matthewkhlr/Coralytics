@@ -1,12 +1,13 @@
-import type { OrganismData, OrganismTopic } from "../three/organismTypes";
+import type {
+  OrganismData,
+  OrganismPost,
+  OrganismTopic,
+} from "../three/organismTypes";
 
 export const SAMPLE_ORGANISM_DATA: OrganismData = {
-  accountAgeDays: 1240,
-  topics: [
-    { name: "tech", postVolume: 82, sentiment: 0.6 },
-    { name: "career", postVolume: 44, sentiment: 0.3 },
-    { name: "social", postVolume: 31, sentiment: -0.1 },
-  ],
+  accountAgeDays: 0,
+  topics: [],
+  posts: [],
 };
 
 function parseTopic(raw: unknown): OrganismTopic | null {
@@ -28,6 +29,35 @@ function parseTopic(raw: unknown): OrganismTopic | null {
   return { name, postVolume, sentiment };
 }
 
+function parsePost(raw: unknown): OrganismPost | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const post = raw as Record<string, unknown>;
+  const id = typeof post.id === "string" ? post.id.trim() : "";
+  if (!id) return null;
+
+  const created_at =
+    typeof post.created_at === "string" ? post.created_at : null;
+
+  const sentiment_label =
+    post.sentiment_label === "positive" ||
+    post.sentiment_label === "neutral" ||
+    post.sentiment_label === "negative"
+      ? post.sentiment_label
+      : undefined;
+
+  const sentiment_compound =
+    typeof post.sentiment_compound === "number"
+      ? post.sentiment_compound
+      : undefined;
+
+  const topics = Array.isArray(post.topics)
+    ? post.topics.filter((topic): topic is string => typeof topic === "string")
+    : undefined;
+
+  return { id, created_at, sentiment_label, sentiment_compound, topics };
+}
+
 export function parseOrganismData(raw: unknown): OrganismData | null {
   if (!raw || typeof raw !== "object") return null;
 
@@ -41,9 +71,15 @@ export function parseOrganismData(raw: unknown): OrganismData | null {
         .filter((topic): topic is OrganismTopic => topic !== null)
     : [];
 
-  if (!topics.length) return null;
+  const posts = Array.isArray(data.posts)
+    ? data.posts
+        .map(parsePost)
+        .filter((post): post is OrganismPost => post !== null)
+    : [];
 
-  return { accountAgeDays, topics };
+  if (!topics.length && !posts.length && accountAgeDays <= 0) return null;
+
+  return { accountAgeDays, topics, posts };
 }
 
 export type OrganismSource = "analysis" | "sample";
