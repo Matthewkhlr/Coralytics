@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" fill="none">
+  <rect width="640" height="400" rx="24" fill="#0a1e32"/>
+  <ellipse cx="320" cy="340" rx="220" ry="24" fill="#1a3a4a" opacity="0.5"/>
+  <rect x="300" y="120" width="40" height="180" rx="8" fill="#54d6c5"/>
+  <polygon points="320,80 280,120 360,120" fill="#f7b267"/>
+  <rect x="250" y="160" width="60" height="12" rx="6" fill="#7ddf64" transform="rotate(-30 280 166)"/>
+  <rect x="330" y="200" width="70" height="12" rx="6" fill="#8aa7ff" transform="rotate(25 365 206)"/>
+  <rect x="270" y="240" width="50" height="10" rx="5" fill="#7ddf64" transform="rotate(-15 295 245)"/>
+  <text x="320" y="380" text-anchor="middle" fill="#7a9aaa" font-family="system-ui,sans-serif" font-size="14">Your 3D coral preview</text>
+</svg>
