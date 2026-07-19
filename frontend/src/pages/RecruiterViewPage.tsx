@@ -89,7 +89,7 @@ export function RecruiterViewPage() {
               </div>
               <div className="rounded-xl bg-background/40 border border-border/60 p-3">
                 <dd className="text-2xl font-bold text-primary">
-                  {analysis.red_flags?.risk_score ?? "—"}
+                  {analysis.red_flags?.risk_score ?? "-"}
                 </dd>
                 <dt className="text-xs text-muted-foreground mt-0.5">Risk</dt>
               </div>

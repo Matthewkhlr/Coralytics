@@ -228,30 +228,34 @@ export const coralV4: OrganismGenerator = (scene, data) => {
   scene.add(coral);
 
   const posts = data.posts ?? [];
+
+  // ========== Group posts by topic ==========
+  // Each post can belong to multiple topics; it appears on every
+  // topic branch it belongs to.
+  const postsByTopic = new Map<string, OrganismPost[]>();
+  for (const post of posts) {
+    if (post.topics && post.topics.length > 0) {
+      for (const topic of post.topics) {
+        let arr = postsByTopic.get(topic);
+        if (!arr) {
+          arr = [];
+          postsByTopic.set(topic, arr);
+        }
+        arr.push(post);
+      }
+    }
+  }
+
+  // Only render topics that have posts and exist in data.topics
+  const topicEntries = data.topics
+    .filter((t) => (postsByTopic.get(t.name)?.length ?? 0) > 0)
+    .map((t) => ({ name: t.name, postVolume: t.postVolume }));
+
   const accountAgeDays = data.accountAgeDays ?? 0;
 
   // trunk height based on account age (1–8 units)
   const ageYears = accountAgeDays / 365;
   const trunkHeight = THREE.MathUtils.clamp(ageYears, 1, 8);
-
-  // group posts by year
-  const postsByYear = new Map<number, OrganismPost[]>();
-
-  for (const post of posts) {
-    const createdAt = post.created_at ? new Date(post.created_at) : null;
-    const year =
-      createdAt && !Number.isNaN(createdAt.getTime())
-        ? createdAt.getFullYear()
-        : 0;
-
-    const yearPosts = postsByYear.get(year) ?? [];
-    yearPosts.push(post);
-    postsByYear.set(year, yearPosts);
-  }
-
-  const years = [...postsByYear.keys()]
-    .filter(year => year !== 0)
-    .sort((a, b) => a - b);
 
   // ========== 1. Trunk ==========
   const trunkGeometry = new THREE.CylinderGeometry(
@@ -273,7 +277,7 @@ export const coralV4: OrganismGenerator = (scene, data) => {
   trunk.position.y = trunkHeight / 2; // base at y = 0
   coral.add(trunk);
 
-  // ========== 2. Snaking branches: one per year ==========
+  // ========== 2. Snaking branches: one per topic ==========
   const branchMaterial = new THREE.MeshStandardMaterial({
     color: "#ff3ba8",
     roughness: 0.7,
@@ -286,48 +290,50 @@ export const coralV4: OrganismGenerator = (scene, data) => {
   const baseBranchDepth = 2; // fork depth for the decorative twigs at each branch tip
   const MIN_POLYP_SPACING = 0.14; // world units reserved per polyp along a branch, keeps them from overlapping
 
-  years.forEach((year, index) => {
-    const postsThisYear = postsByYear.get(year) ?? [];
+  const maxVolume = Math.max(...topicEntries.map((t) => t.postVolume), 1);
+  const topicCount = topicEntries.length;
+
+  topicEntries.forEach((entry, index) => {
+    const postsThisTopic = postsByTopic.get(entry.name) ?? [];
 
     // place branch root somewhere up the trunk
-    const t = (index + 1) / (years.length + 1); // 0..1
+    // distribute branches evenly around the trunk, with a slight spiral
+    // so more-populous topics sit slightly higher
+    const t = (index + 1) / (topicCount + 1);
     const heightOnTrunk = t * trunkHeight;
 
     const branchRoot = new THREE.Object3D();
     branchRoot.position.y = heightOnTrunk;
 
+    // Store the topic name so the 3D viewport click handler can find it
+    // when the user clicks on any mesh in this branch.
+    branchRoot.userData.topicName = entry.name;
+
     // distribute branches around the trunk, with a little randomness so it
     // doesn't read as mechanically even, plus an outward tilt so branches
     // actually splay away from the trunk instead of standing parallel to it
-    const baseAngle = index * (Math.PI * 2 / Math.max(years.length, 1));
+    const baseAngle = index * (Math.PI * 2 / Math.max(topicCount, 1));
     branchRoot.rotation.y = baseAngle + (Math.random() - 0.5) * 0.4;
     branchRoot.rotateZ(-(0.35 + Math.random() * 0.3));
 
     trunk.add(branchRoot);
 
-    // optionally scale branch length by number of posts, but also make sure
+    // scale branch length by topic post volume, but also make sure
     // there's physically enough room for every polyp: each one occupies
-    // roughly MIN_POLYP_SPACING of branch length, so a prolific year gets a
-    // longer branch instead of packing polyps on top of each other
-    const postCount = postsThisYear.length;
-    const volumeFactor = THREE.MathUtils.clamp(postCount / 20, 0.5, 1.5);
+    // roughly MIN_POLYP_SPACING of branch length
+    const postCount = postsThisTopic.length;
+    const volumeFactor = Math.max(0.5, entry.postVolume / maxVolume);
     const idealLength = Math.max(baseBranchLength * volumeFactor, postCount * MIN_POLYP_SPACING);
+
     // soft cap: below this, branches grow linearly with post count so spacing
     // is always respected. Beyond it, growth tapers off (sqrt) instead of
-    // hard-clamping, so an extremely prolific year still gets a longer
-    // branch rather than being squeezed back down to a fixed size — that's
-    // what caused polyps to blanket a branch like fur when it was clamped
-    // against the (possibly short) trunk height instead.
+    // hard-clamping.
     const SOFT_CAP_LENGTH = 4;
     const branchLength = idealLength <= SOFT_CAP_LENGTH
       ? idealLength
       : SOFT_CAP_LENGTH + Math.sqrt(idealLength - SOFT_CAP_LENGTH);
 
     // mesh segment count: kept modest for performance/visual smoothness only.
-    // This is now fully decoupled from post count — polyp placement below
-    // uses a continuous sample of the curve, not these segments, so a year
-    // with hundreds of posts still gets unique, evenly spaced positions
-    // instead of stacking onto a limited set of mesh joints.
     const stemSegments = THREE.MathUtils.clamp(Math.round(branchLength / 0.3), 3, 10);
     const { tip, sampleAt } = makeSnakeStem(
       branchRoot,
@@ -342,15 +348,8 @@ export const coralV4: OrganismGenerator = (scene, data) => {
     makeBranch(tip, branchLength * 0.5, baseBranchRadius * 0.55, baseBranchDepth, branchMaterial);
 
     // ========== 3. Polyps along this branch: one per post ==========
-    // Sample the exact position/orientation on the curved stem for this
-    // post's t value — a continuous function, so every post gets its own
-    // unique spot no matter how many posts there are. Each polyp is rotated
-    // to point outward from the branch's own axis (a random azimuth around
-    // it, then tilted ~65-100° away from the branch's direction) and pushed
-    // out to the branch's local surface radius, so they read as growths
-    // sprouting from the side rather than beads threaded along the length.
-    postsThisYear.forEach((post, postIndex) => {
-      const postT = (postIndex + 1) / (postsThisYear.length + 1); // 0..1
+    postsThisTopic.forEach((post, postIndex) => {
+      const postT = (postIndex + 1) / (postsThisTopic.length + 1); // 0..1
       const sample = sampleAt(postT);
 
       const polyp = buildPolyp(sample.radius);

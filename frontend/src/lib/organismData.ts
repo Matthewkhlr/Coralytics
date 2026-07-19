@@ -171,7 +171,7 @@ export function organismDataForPlatform(
 export function formatAnalysisDiff(diff: AnalysisDiff | null | undefined): string | null {
   if (!diff) return null;
   if (diff.no_meaningful_change) {
-    return "No meaningful change — this looks like data you already had.";
+    return "No meaningful change - this looks like data you already had.";
   }
 
   const parts: string[] = [];
@@ -203,7 +203,7 @@ export function formatDemoUserLabel(userId: string) {
 
 export function formatSentiment(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
+    return "-";
   }
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}`;
@@ -211,7 +211,7 @@ export function formatSentiment(value: number | null | undefined) {
 
 export function formatSentimentRatio(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
+    return "-";
   }
   return `${Math.round(value * 100)}%`;
 }
@@ -237,7 +237,7 @@ export function getSentimentRatio(
 }
 
 export function formatImpactStrength(postCount: number | null | undefined) {
-  if (!postCount || postCount <= 0) return "—";
+  if (!postCount || postCount <= 0) return "-";
   const score = Math.min(100, Math.round(postCount * 4.5));
   return `${score}%`;
 }

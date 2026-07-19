@@ -39,6 +39,10 @@ class Settings:
         return bool(os.getenv("FIRESTORE_EMULATOR_HOST"))
 
     @property
+    def use_auth_emulator(self) -> bool:
+        return bool(os.getenv("FIREBASE_AUTH_EMULATOR_HOST"))
+
+    @property
     def allow_seed_endpoint(self) -> bool:
         """Allow POST /seed/sample-data (emulator by default, or SEED_ENDPOINT_ENABLED=1)."""
         if self.use_emulators:

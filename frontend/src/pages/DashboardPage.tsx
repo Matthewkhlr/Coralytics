@@ -272,7 +272,7 @@ export function DashboardPage() {
       ) : null}
 
       <PageHeader className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <PageTitle className="text-white">Explore Your Reef</PageTitle>
+        <PageTitle>Explore Your Reef</PageTitle>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"

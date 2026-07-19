@@ -21,17 +21,20 @@ export const db = getFirestore(app);
 // Keep the Firebase login session across page reloads and tab switches.
 void setPersistence(auth, browserLocalPersistence);
 
-const useEmulator =
-  import.meta.env.VITE_USE_AUTH_EMULATOR === "true" || import.meta.env.DEV;
+const useAuthEmulator = import.meta.env.VITE_USE_AUTH_EMULATOR === "true";
+const useFirestoreEmulator = import.meta.env.VITE_USE_FIRESTORE_EMULATOR === "true";
 
 const AUTH_EMULATOR_URL = "http://localhost:9099";
 
-if (useEmulator) {
+if (useAuthEmulator) {
   try {
     connectAuthEmulator(auth, AUTH_EMULATOR_URL, { disableWarnings: true });
   } catch {
     // Emulator already connected (hot reload).
   }
+}
+
+if (useFirestoreEmulator) {
   try {
     connectFirestoreEmulator(db, "localhost", 8080);
   } catch {

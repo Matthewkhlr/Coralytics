@@ -27,6 +27,7 @@ import {
   changeUsernameClaim,
   claimUsername,
   isUsernameAvailable,
+  looksLikeEmail,
   resolveLoginEmail,
   validateUsername,
 } from "../lib/usernames";
@@ -86,19 +87,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (identifier: string, password: string) => {
-    const email = await resolveLoginEmail(identifier);
+    const email = looksLikeEmail(identifier) ? identifier.trim() : await resolveLoginEmail(identifier);
     await signInWithEmailAndPassword(auth, email, password);
   }, []);
 
   const signUp = useCallback(async (username: string, email: string, password: string) => {
     const usernameError = validateUsername(username);
     if (usernameError) throw new Error(usernameError);
-    if (!(await isUsernameAvailable(username))) {
-      throw new Error("That username is already taken.");
-    }
     const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
     await updateProfile(credential.user, { displayName: username.trim() });
-    await claimUsername(username, credential.user.uid, email.trim());
+    try {
+      await claimUsername(username, credential.user.uid, email.trim());
+    } catch (err) {
+      console.warn("Account created, but username claim failed:", err);
+    }
   }, []);
 
   const loginWithGoogle = useCallback(async (username?: string) => {

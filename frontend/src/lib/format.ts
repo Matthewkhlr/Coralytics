@@ -1,7 +1,7 @@
 export function formatShortDate(iso: string | undefined) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -14,7 +14,7 @@ export function formatPlatform(platform: string) {
   return platform.charAt(0).toUpperCase() + platform.slice(1);
 }
 
-/** Display label for an analysis run — custom name or datetime fallback. */
+/** Display label for an analysis run - custom name or datetime fallback. */
 export function formatRunLabel(
   analysis: { name?: string | null; created_at?: string },
   fallbackRunNumber?: number,
