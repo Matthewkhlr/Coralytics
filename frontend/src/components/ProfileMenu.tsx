@@ -1,23 +1,45 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { ChevronDown, LogOut, RefreshCw } from "lucide-react";
-import { analyzeUploads } from "@/api/client";
+import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
+import { AtSign, CircleUserRound, KeyRound, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useUploads } from "@/hooks/useUploads";
 import {
   clearCachedProfile,
   readCachedProfile,
   writeCachedProfile,
 } from "@/lib/profileCache";
-import { cn } from "@/lib/utils";
+import { isUsernameAvailable, validateUsername } from "@/lib/usernames";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 export function ProfileMenu() {
-  const { user, loading, logOut } = useAuth();
+  const { user, loading, updateUsername, changePassword, logOut } = useAuth();
   const navigate = useNavigate();
-  const { uploads } = useUploads(user?.uid);
-  const [open, setOpen] = useState(false);
-  const [reanalyzing, setReanalyzing] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+
+  const [usernameOpen, setUsernameOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const cachedProfile = readCachedProfile();
   const displayName =
@@ -26,6 +48,8 @@ export function ProfileMenu() {
     cachedProfile?.displayName ||
     "User";
   const email = user?.email ?? cachedProfile?.email ?? "";
+  const canChangePassword =
+    user?.providerData.some((provider) => provider.providerId === "password") ?? false;
 
   useEffect(() => {
     if (!user) return;
@@ -35,88 +59,279 @@ export function ProfileMenu() {
     );
   }, [user]);
 
-  useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  const resetUsernameForm = () => {
+    setNewUsername(displayName);
+    setError(null);
+    setSaving(false);
+  };
 
-  const handleLogout = async () => {
+  const resetPasswordForm = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setError(null);
+    setSaving(false);
+  };
+
+  const handleSignOut = async () => {
     clearCachedProfile();
     await logOut();
     navigate("/");
   };
 
-  const handleReanalyze = async () => {
-    if (!user) return;
-    setReanalyzing(true);
+  const handleChangeUsername = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const trimmed = newUsername.trim();
+    const formatError = validateUsername(trimmed);
+    if (formatError) {
+      setError(formatError);
+      return;
+    }
+    if (trimmed.toLowerCase() === displayName.toLowerCase()) {
+      setError("That is already your username.");
+      return;
+    }
+
+    setSaving(true);
     try {
-      await analyzeUploads({ user_id: user.uid, upload_ids: [], persist: true });
-      window.location.reload();
-    } finally {
-      setReanalyzing(false);
-      setOpen(false);
+      if (!(await isUsernameAvailable(trimmed))) {
+        setError("That username is already taken.");
+        setSaving(false);
+        return;
+      }
+      await updateUsername(trimmed);
+      setUsernameOpen(false);
+      resetUsernameForm();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update username.");
+      setSaving(false);
     }
   };
 
-  return (
-    <div className="relative" ref={menuRef}>
-      <button
-        type="button"
-        aria-expanded={open}
-        disabled={loading && !user}
-        onClick={() => {
-          if (loading && !user) return;
-          setOpen((value) => !value);
-        }}
-        className="inline-flex max-w-full items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-card/60 border border-border/60 hover:bg-card transition disabled:cursor-default"
-      >
-        <span className="min-w-[4.5rem] max-w-[6.5rem] truncate text-left">{displayName}</span>
-        <ChevronDown size={14} className="shrink-0" />
-      </button>
+  const handleChangePassword = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
 
-      {open && user ? (
-        <div
-          role="menu"
-          className="absolute right-0 mt-2 w-56 rounded-2xl border border-border/60 bg-card p-2 z-50"
+    if (newPassword.length < 6) {
+      setError("New password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("New passwords do not match.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setPasswordOpen(false);
+      resetPasswordForm();
+    } catch (err) {
+      setError(formatPasswordError(err));
+      setSaving(false);
+    }
+  };
+
+  if (loading && !user) {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled
+        className="rounded-full text-muted-foreground/90"
+        aria-label="Account menu"
+      >
+        <CircleUserRound />
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full text-muted-foreground/90 hover:text-foreground"
+            aria-label="Account menu"
+          >
+            <CircleUserRound className="size-5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="w-64 border-foreground/20 bg-background/45 backdrop-blur-[10px]"
         >
-          <p className="px-3 py-2 text-xs text-muted-foreground truncate">{email}</p>
-          <Link
-            to="/dashboard"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm hover:bg-background/60 transition"
+          <DropdownMenuLabel className="font-normal">
+            <div className="flex flex-col gap-1">
+              <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
+              {email ? (
+                <p className="truncate text-xs text-muted-foreground">{email}</p>
+              ) : null}
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => {
+              resetUsernameForm();
+              setUsernameOpen(true);
+            }}
           >
-            Dashboard
-          </Link>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={reanalyzing || uploads.length === 0}
-            onClick={() => void handleReanalyze()}
-            className={cn(
-              "w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm hover:bg-background/60 transition text-left",
-              (reanalyzing || uploads.length === 0) && "opacity-50 cursor-not-allowed",
-            )}
-          >
-            <RefreshCw size={16} className={reanalyzing ? "spin-icon" : undefined} />
-            {reanalyzing ? "Re-analyzing…" : "Re-analyze uploads"}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => void handleLogout()}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm hover:bg-background/60 transition text-left"
-          >
-            <LogOut size={16} />
+            <AtSign />
+            Change username
+          </DropdownMenuItem>
+          {canChangePassword ? (
+            <DropdownMenuItem
+              onClick={() => {
+                resetPasswordForm();
+                setPasswordOpen(true);
+              }}
+            >
+              <KeyRound />
+              Change password
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem onClick={() => void handleSignOut()}>
+            <LogOut />
             Sign out
-          </button>
-        </div>
-      ) : null}
-    </div>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Sheet
+        open={usernameOpen}
+        onOpenChange={(open) => {
+          setUsernameOpen(open);
+          if (!open) resetUsernameForm();
+        }}
+      >
+        <SheetContent side="right" className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle className="font-display text-left">Change username</SheetTitle>
+            <SheetDescription className="text-left">
+              Choose a unique username (3–20 letters, numbers, or underscore).
+            </SheetDescription>
+          </SheetHeader>
+
+          <form
+            className="mt-6 flex flex-col gap-4 px-4"
+            onSubmit={(e) => void handleChangeUsername(e)}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="new-username">Username</Label>
+              <Input
+                id="new-username"
+                type="text"
+                autoComplete="username"
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                required
+                minLength={3}
+                maxLength={20}
+              />
+            </div>
+
+            {error ? (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            <Button type="submit" disabled={saving} className="mt-2">
+              {saving ? "Updating…" : "Update username"}
+            </Button>
+          </form>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet
+        open={passwordOpen}
+        onOpenChange={(open) => {
+          setPasswordOpen(open);
+          if (!open) resetPasswordForm();
+        }}
+      >
+        <SheetContent side="right" className="w-full sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle className="font-display text-left">Change password</SheetTitle>
+            <SheetDescription className="text-left">
+              Enter your current password, then choose a new one.
+            </SheetDescription>
+          </SheetHeader>
+
+          <form
+            className="mt-6 flex flex-col gap-4 px-4"
+            onSubmit={(e) => void handleChangePassword(e)}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Current password</Label>
+              <Input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={6}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirm new password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                minLength={6}
+              />
+            </div>
+
+            {error ? (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            <Button type="submit" disabled={saving} className="mt-2">
+              {saving ? "Updating…" : "Update password"}
+            </Button>
+          </form>
+        </SheetContent>
+      </Sheet>
+    </>
   );
+}
+
+function formatPasswordError(err: unknown): string {
+  const code = (err as { code?: string }).code;
+  if (
+    code === "auth/invalid-credential" ||
+    code === "auth/wrong-password" ||
+    code === "auth/invalid-login-credentials"
+  ) {
+    return "Current password is incorrect.";
+  }
+  if (code === "auth/weak-password") {
+    return "New password must be at least 6 characters.";
+  }
+  if (code === "auth/requires-recent-login") {
+    return "Please sign out and sign in again, then retry.";
+  }
+  return err instanceof Error ? err.message : "Could not update password.";
 }

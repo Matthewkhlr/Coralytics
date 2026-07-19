@@ -26,7 +26,13 @@ import zipfile
 from pathlib import Path
 
 from .ingest import MAX_FILE_SIZE, ingest_path, write_json_outputs
-from .schema import MAX_CONTENT_LENGTH
+from .schema import (
+    MAX_CONTENT_LENGTH,
+    NormalizedPost,
+    Platform,
+    PostType,
+    finalize_posts,
+)
 
 
 def _write(path: Path, content: str) -> None:
@@ -76,6 +82,25 @@ def test_content_length_clamped() -> None:
         assert len(result.posts) == 1
         assert len(result.posts[0].content) <= MAX_CONTENT_LENGTH
     print("PASS: content_length_clamped")
+
+
+def test_overlapping_exports_deduplicate_by_content_identity() -> None:
+    """Filename/row-derived ids must not duplicate the same exported post."""
+    shared = {
+        "platform": Platform.instagram,
+        "content": "The same post from two exports",
+        "created_at": "2024-01-01T12:00:00Z",
+        "post_type": PostType.post,
+    }
+    posts = finalize_posts(
+        [
+            NormalizedPost(id="instagram:posts_1-0", **shared),
+            NormalizedPost(id="instagram:renamed_export-42", **shared),
+        ]
+    )
+
+    assert len(posts) == 1, f"Expected one unique post, got {len(posts)}"
+    print("PASS: overlapping_exports_deduplicate_by_content_identity")
 
 
 def test_corrupt_and_unknown_files_dont_abort_batch() -> None:
@@ -223,6 +248,7 @@ def main() -> None:
     test_zip_slip_rejected()
     test_oversized_file_skipped()
     test_content_length_clamped()
+    test_overlapping_exports_deduplicate_by_content_identity()
     test_corrupt_and_unknown_files_dont_abort_batch()
     test_private_paths_excluded()
     test_separate_mode_splits_posts_and_comments()

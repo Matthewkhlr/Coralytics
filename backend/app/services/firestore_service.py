@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.firebase import get_firestore_client
+from app.ingestion.schema import post_identity_fingerprint
 from app.services import analysis_store_service, ingestion_service, raw_data_service
 
 
@@ -174,19 +175,27 @@ def get_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
     return analysis_store_service.get_analysis(user_id, analysis_id)
 
 
-def list_analyses(user_id: str) -> list[dict[str, Any]]:
-    return analysis_store_service.list_analyses(user_id)
+def list_analyses(user_id: str, *, hydrate: bool = True) -> list[dict[str, Any]]:
+    return analysis_store_service.list_analyses(user_id, hydrate=hydrate)
 
 
 def _dedupe_posts_by_id(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep the first occurrence of each post id across uploads."""
-    seen: set[str] = set()
+    """Keep one canonical copy of posts repeated across overlapping exports."""
+    seen_ids: set[str] = set()
+    seen_fingerprints: set[str] = set()
     unique: list[dict[str, Any]] = []
     for post in posts:
         post_id = str(post.get("id") or "")
-        if not post_id or post_id in seen:
+        fingerprint = post_identity_fingerprint(post)
+        if (
+            not post_id
+            or post_id in seen_ids
+            or (fingerprint is not None and fingerprint in seen_fingerprints)
+        ):
             continue
-        seen.add(post_id)
+        seen_ids.add(post_id)
+        if fingerprint is not None:
+            seen_fingerprints.add(fingerprint)
         unique.append(post)
     return unique
 

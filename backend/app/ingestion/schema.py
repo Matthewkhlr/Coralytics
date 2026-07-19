@@ -15,7 +15,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Iterable, Optional
+from hashlib import sha256
+from typing import Any, Iterable, Mapping, Optional
+import re
+import unicodedata
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -78,6 +81,36 @@ def make_id(platform: Platform | str, raw_id: str) -> str:
     """
     platform_value = platform.value if isinstance(platform, Platform) else platform
     return f"{platform_value}:{raw_id}"
+
+
+def post_identity_fingerprint(post: NormalizedPost | Mapping[str, Any]) -> str | None:
+    """Return a stable identity for the same post appearing in overlapping exports.
+
+    Export row numbers and filenames are not stable identifiers. When a date or
+    URL is available, use normalized post attributes instead so reordered or
+    renamed Instagram/LinkedIn exports do not inflate the master history.
+    """
+    if isinstance(post, NormalizedPost):
+        values = post.model_dump()
+    else:
+        values = post
+
+    created_at = str(values.get("created_at") or "").strip()
+    url = str(values.get("url") or "").strip()
+    if not created_at and not url:
+        return None
+
+    content = unicodedata.normalize("NFKC", str(values.get("content") or ""))
+    content = re.sub(r"\s+", " ", content).strip()
+    fields = (
+        str(values.get("platform") or "").lower().strip(),
+        str(values.get("post_type") or "").lower().strip(),
+        created_at,
+        url,
+        str(values.get("source_context") or "").strip(),
+        content,
+    )
+    return sha256("\x1f".join(fields).encode("utf-8")).hexdigest()
 
 
 def to_iso(timestamp: Optional[float | int | str]) -> Optional[str]:
@@ -173,13 +206,17 @@ def finalize_posts(posts: Iterable[NormalizedPost]) -> list[NormalizedPost]:
       3. Sort by `created_at` (posts with no date sort last, in their
          original relative order).
     """
-    seen: set[str] = set()
+    seen_ids: set[str] = set()
+    seen_fingerprints: set[str] = set()
     result: list[NormalizedPost] = []
 
     for post in posts:
-        if post.id in seen:
+        fingerprint = post_identity_fingerprint(post)
+        if post.id in seen_ids or (fingerprint is not None and fingerprint in seen_fingerprints):
             continue
-        seen.add(post.id)
+        seen_ids.add(post.id)
+        if fingerprint is not None:
+            seen_fingerprints.add(fingerprint)
 
         if len(post.content) > MAX_CONTENT_LENGTH:
             post = post.model_copy(update={"content": clamp_text(post.content)})

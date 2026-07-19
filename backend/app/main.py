@@ -135,6 +135,15 @@ def _ingest_and_save_upload(
     safe_filename = filename.replace("/", "_").replace("\\", "_")
     content_hash = sha256(content).hexdigest()
 
+    existing_upload = firestore_service.find_upload_by_content_hash(user_id, content_hash)
+    if existing_upload:
+        duplicate = dict(existing_upload)
+        duplicate["content_hash"] = content_hash
+        duplicate["is_duplicate"] = True
+        duplicate["duplicate_of"] = existing_upload.get("upload_id")
+        duplicate["warnings"] = []
+        return duplicate
+
     try:
         warnings: list[str] = []
         raw_files, extract_warnings = ingestion_service.extract_raw_upload(content, safe_filename)
@@ -414,12 +423,10 @@ def analyze_posts(
     if payload.user_id != current_uid:
         raise HTTPException(status_code=403, detail="User id does not match authenticated user")
 
-    scoped_ids = [uid for uid in payload.upload_ids if uid]
     try:
         result = analysis_service.run_user_analysis(
             payload.user_id,
             persist=payload.persist,
-            upload_ids=scoped_ids or None,
             name=payload.name,
         )
     except Exception as exc:
@@ -447,7 +454,8 @@ def list_user_analyses(
 ) -> dict[str, list[dict[str, object]]]:
     """List analysis results for a user."""
     try:
-        analyses = firestore_service.list_analyses(user_id)
+        # Return document summaries; clients load full post_insights via GET one analysis.
+        analyses = firestore_service.list_analyses(user_id, hydrate=False)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to list analyses: {exc}") from exc
 

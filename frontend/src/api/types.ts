@@ -151,25 +151,8 @@ export type UploadsResponse = {
 
 export type AnalyzeRequest = {
   user_id: string;
-  upload_ids: string[];
   persist?: boolean;
   name?: string;
-};
-
-export type HealthResponse = {
-  status: string;
-  use_emulators?: boolean;
-  firebase_project?: string;
-  auth_required?: boolean;
-};
-
-export type PrivacySettings = {
-  include_comments: boolean;
-  exclude_flagged_from_share: boolean;
-  include_post_excerpts_in_share: boolean;
-  share_expiry_days: number;
-  excluded_platforms: string[];
-  updated_at?: string;
 };
 
 export type PostSummary = {

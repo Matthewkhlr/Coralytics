@@ -1,11 +1,26 @@
 import { FormEvent, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { X } from "lucide-react";
+import { Moon, Sun, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { isUsernameAvailable, validateUsername } from "@/lib/usernames";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function LoginPage() {
   const { user, loading, login, signUp, loginWithGoogle } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [username, setUsername] = useState("");
@@ -17,7 +32,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (!loading && user) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/" replace />;
   }
 
   const checkUsernameTaken = async (value: string) => {
@@ -89,141 +104,235 @@ export function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-ocean-radial flex items-center justify-center px-6 py-16">
-      <section className="relative w-full max-w-md rounded-3xl border border-border/60 bg-card p-8">
-        <button
-          type="button"
-          aria-label="Cancel"
-          onClick={() => navigate("/")}
-          className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition hover:bg-background/60 hover:text-foreground"
-        >
-          <X size={18} />
-        </button>
-
-        <Link to="/" className="mb-6 flex items-center gap-2.5 pr-10">
-          <span
-            className="h-8 w-8 rounded-md border border-dashed border-border/60 bg-background/40"
-            aria-label="Logo placeholder"
-          />
-          <span className="text-lg font-bold tracking-tight text-white">
-            Coralytics
-          </span>
-        </Link>
-
-        <h1 className="text-3xl font-bold tracking-tight">
-          {mode === "login" ? "Login" : "Sign up"}
-        </h1>
-
-        <form className="mt-6 space-y-4" onSubmit={(e) => void handleSubmit(e)}>
-          {mode === "signup" ? (
-            <label className="block text-sm">
-              <span className="text-muted-foreground">Username</span>
-              <input
-                type="text"
-                autoComplete="username"
-                required
-                minLength={3}
-                maxLength={20}
-                value={username}
-                onChange={(e) => {
-                  setUsername(e.target.value);
-                  setUsernameError(null);
-                }}
-                onBlur={() => void checkUsernameTaken(username)}
-                placeholder="unique_username"
-                className="mt-1.5 w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-foreground outline-none focus:ring-2 focus:ring-ring"
-              />
-              {usernameError ? (
-                <p className="mt-1.5 text-sm text-primary" role="alert">
-                  {usernameError}
-                </p>
-              ) : null}
-            </label>
-          ) : (
-            <label className="block text-sm">
-              <span className="text-muted-foreground">Username or email</span>
-              <input
-                type="text"
-                autoComplete="username"
-                required
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-foreground outline-none focus:ring-2 focus:ring-ring"
-              />
-            </label>
-          )}
-
-          {mode === "signup" ? (
-            <label className="block text-sm">
-              <span className="text-muted-foreground">Email</span>
-              <input
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-foreground outline-none focus:ring-2 focus:ring-ring"
-              />
-            </label>
-          ) : null}
-
-          <label className="block text-sm">
-            <span className="text-muted-foreground">Password</span>
-            <input
-              type="password"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-border bg-background/60 px-3 py-2.5 text-foreground outline-none focus:ring-2 focus:ring-ring"
-            />
-          </label>
-
-          {error ? (
-            <p className="text-sm text-primary" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={submitting || Boolean(usernameError)}
-            className="w-full rounded-full bg-primary px-5 py-3 font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+    <main className="flex min-h-screen items-center justify-center bg-ocean-radial px-6 py-16">
+      <Card className="relative w-full max-w-md border-border/60 bg-card/95 shadow-lg backdrop-blur-sm">
+        <div className="absolute right-4 top-4 flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
-            {submitting ? "Please wait…" : mode === "login" ? "Login" : "Sign up"}
-          </button>
-        </form>
-
-        <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="h-px flex-1 bg-border" />
-          or
-          <span className="h-px flex-1 bg-border" />
+            {theme === "dark" ? <Sun /> : <Moon />}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Cancel"
+            onClick={() => navigate("/")}
+          >
+            <X />
+          </Button>
         </div>
 
-        <button
-          type="button"
-          disabled={submitting || (mode === "signup" && (!username.trim() || Boolean(usernameError)))}
-          onClick={() => void handleGoogle()}
-          className="flex w-full items-center justify-center gap-2 rounded-full border border-border bg-background/40 px-5 py-3 text-sm font-semibold transition hover:bg-card disabled:opacity-50"
-        >
-          <GoogleMark />
-          {mode === "login" ? "Continue with Google" : "Sign up with Google"}
-        </button>
+        <CardHeader className="space-y-4 pr-20">
+          <Link to="/" className="flex items-center gap-2.5 w-fit">
+            <span
+              className="relative flex size-8 items-center justify-center overflow-hidden rounded-lg border border-primary/25 bg-primary/15"
+              aria-hidden
+            >
+              <span className="absolute inset-[3px] rounded-md bg-gradient-to-br from-primary to-accent opacity-90" />
+            </span>
+            <span className="font-display text-xl font-semibold tracking-tight">
+              Coralytics
+            </span>
+          </Link>
+          <div>
+            <CardTitle className="font-display text-3xl font-semibold">Welcome</CardTitle>
+            <CardDescription className="mt-1.5">
+              Sign in to grow and explore your reef.
+            </CardDescription>
+          </div>
+        </CardHeader>
 
-        <button
-          type="button"
-          onClick={() => {
-            setMode(mode === "login" ? "signup" : "login");
-            setError(null);
-            setUsernameError(null);
-          }}
-          className="mt-4 w-full text-sm text-muted-foreground transition hover:text-foreground"
-        >
-          {mode === "login" ? "Need an account? Sign up" : "Already have an account? Login"}
-        </button>
-      </section>
+        <CardContent>
+          <Tabs
+            value={mode}
+            onValueChange={(v) => {
+              setMode(v as "login" | "signup");
+              setError(null);
+              setUsernameError(null);
+            }}
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="login">Login</TabsTrigger>
+              <TabsTrigger value="signup">Sign up</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="login" className="mt-6">
+              <AuthForm
+                mode="login"
+                identifier={identifier}
+                setIdentifier={setIdentifier}
+                password={password}
+                setPassword={setPassword}
+                error={error}
+                submitting={submitting}
+                usernameError={usernameError}
+                onSubmit={handleSubmit}
+              />
+            </TabsContent>
+
+            <TabsContent value="signup" className="mt-6">
+              <AuthForm
+                mode="signup"
+                username={username}
+                setUsername={setUsername}
+                email={email}
+                setEmail={setEmail}
+                password={password}
+                setPassword={setPassword}
+                error={error}
+                submitting={submitting}
+                usernameError={usernameError}
+                onUsernameBlur={() => void checkUsernameTaken(username)}
+                onUsernameChange={() => setUsernameError(null)}
+                onSubmit={handleSubmit}
+              />
+            </TabsContent>
+          </Tabs>
+
+          <div className="my-6 flex items-center gap-3">
+            <Separator className="flex-1" />
+            <span className="text-xs text-muted-foreground">or</span>
+            <Separator className="flex-1" />
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={
+              submitting ||
+              (mode === "signup" && (!username.trim() || Boolean(usernameError)))
+            }
+            onClick={() => void handleGoogle()}
+          >
+            <GoogleMark />
+            {mode === "login" ? "Continue with Google" : "Sign up with Google"}
+          </Button>
+        </CardContent>
+      </Card>
     </main>
+  );
+}
+
+function AuthForm({
+  mode,
+  username,
+  setUsername,
+  identifier,
+  setIdentifier,
+  email,
+  setEmail,
+  password,
+  setPassword,
+  error,
+  submitting,
+  usernameError,
+  onUsernameBlur,
+  onUsernameChange,
+  onSubmit,
+}: {
+  mode: "login" | "signup";
+  username?: string;
+  setUsername?: (v: string) => void;
+  identifier?: string;
+  setIdentifier?: (v: string) => void;
+  email?: string;
+  setEmail?: (v: string) => void;
+  password: string;
+  setPassword: (v: string) => void;
+  error: string | null;
+  submitting: boolean;
+  usernameError: string | null;
+  onUsernameBlur?: () => void;
+  onUsernameChange?: () => void;
+  onSubmit: (e: FormEvent) => void;
+}) {
+  return (
+    <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
+      {mode === "signup" ? (
+        <div className="space-y-2">
+          <Label htmlFor="username">Username</Label>
+          <Input
+            id="username"
+            type="text"
+            autoComplete="username"
+            required
+            minLength={3}
+            maxLength={20}
+            value={username}
+            onChange={(e) => {
+              setUsername?.(e.target.value);
+              onUsernameChange?.();
+            }}
+            onBlur={onUsernameBlur}
+            placeholder="unique_username"
+          />
+          {usernameError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {usernameError}
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <Label htmlFor="identifier">Username or email</Label>
+          <Input
+            id="identifier"
+            type="text"
+            autoComplete="username"
+            required
+            value={identifier}
+            onChange={(e) => setIdentifier?.(e.target.value)}
+          />
+        </div>
+      )}
+
+      {mode === "signup" ? (
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail?.(e.target.value)}
+          />
+        </div>
+      ) : null}
+
+      <div className="space-y-2">
+        <Label htmlFor="password">Password</Label>
+        <Input
+          id="password"
+          type="password"
+          autoComplete={mode === "login" ? "current-password" : "new-password"}
+          required
+          minLength={6}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </div>
+
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={submitting || Boolean(usernameError)}
+      >
+        {submitting ? "Please wait…" : mode === "login" ? "Login" : "Create account"}
+      </Button>
+    </form>
   );
 }
 
@@ -261,7 +370,11 @@ function formatAuthError(err: unknown): string {
   if (code === "auth/email-already-in-use") {
     return "That email is already registered. Try logging in instead.";
   }
-  if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") {
+  if (
+    code === "auth/invalid-credential" ||
+    code === "auth/wrong-password" ||
+    code === "auth/user-not-found"
+  ) {
     return "Incorrect username/email or password.";
   }
   if (code === "auth/unauthorized-domain") {

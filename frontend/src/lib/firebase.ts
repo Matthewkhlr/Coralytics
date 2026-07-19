@@ -1,5 +1,10 @@
 import { initializeApp, getApps } from "firebase/app";
-import { connectAuthEmulator, getAuth } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  connectAuthEmulator,
+  getAuth,
+  setPersistence,
+} from "firebase/auth";
 import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -12,6 +17,9 @@ const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Keep the Firebase login session across page reloads and tab switches.
+void setPersistence(auth, browserLocalPersistence);
 
 const useEmulator =
   import.meta.env.VITE_USE_AUTH_EMULATOR === "true" || import.meta.env.DEV;

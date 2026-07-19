@@ -1,13 +1,30 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useCallback,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Check, FilePlus2, LoaderCircle, Trash2 } from "lucide-react";
+import { Check, FilePlus2, GripVertical, Info, LoaderCircle, Trash2 } from "lucide-react";
 import { ApiError, analyzeUploads, updateUploadPlatform, uploadExport } from "@/api/client";
 import type { Analysis, Upload } from "@/api/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
 import { useUploads } from "@/hooks/useUploads";
-import { PageHeader, PageShell, PageTitle, SectionTitle } from "@/components/PageShell";
+import { OceanPageFrame, PageHeader, PageTitle, SectionTitle } from "@/components/PageShell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { cacheAnalysis, invalidateAnalysisCache } from "@/lib/analysisCache";
 import { formatPlatform, formatRunLabel, formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -60,16 +77,6 @@ function findDraftByFile(file: File, hash: string, rows: DraftFile[]) {
   return rows.find((row) => row.file.name === file.name || row.contentHash === hash);
 }
 
-type DuplicateNotice = {
-  names: string[];
-};
-
-function buildDuplicateNotice(notice: DuplicateNotice | null) {
-  if (!notice?.names.length) return null;
-  const names = [...new Set(notice.names)];
-  return `Duplicated: ${names.join(", ")}. Saved the latest one.`;
-}
-
 function cloneDraftForUpload(rows: DraftFile[]): DraftFile[] {
   return rows.map((row) => ({
     ...row,
@@ -111,13 +118,9 @@ const UPLOAD_STEP_TONES = {
 const UPLOAD_FILE_HELP =
   "Supported sources: Instagram, LinkedIn, Reddit.\nSupported formats: .zip, .json, .csv, .txt.";
 
-const PRIMARY_CTA_CLASS =
-  "inline-flex w-auto items-center justify-center rounded-full bg-primary px-6 py-3 font-semibold text-primary-foreground transition hover:brightness-110 disabled:opacity-50";
-
-const SECONDARY_CTA_CLASS =
-  "inline-flex w-auto items-center justify-center rounded-full border border-border px-5 py-3 text-sm font-semibold transition hover:bg-card/40 disabled:opacity-50";
-
-const RUN_NAME_HELP = "Every run is saved.";
+/** Matches the landing page "Get started" button (use with variant="outline"). */
+const LANDING_BUTTON =
+  "h-auto rounded-none border-foreground/35 bg-accent/10 px-6 py-3 text-[12px] font-medium uppercase tracking-[0.22em] backdrop-blur-md hover:bg-accent/20 hover:border-foreground/60";
 
 function StepHelp({ text, ariaLabel = "More information" }: { text: string; ariaLabel?: string }) {
   const [open, setOpen] = useState(false);
@@ -138,7 +141,7 @@ function StepHelp({ text, ariaLabel = "More information" }: { text: string; aria
           }
         }}
       >
-        ?
+        <Info size={15} strokeWidth={2} aria-hidden />
       </button>
       {open ? (
         <span id={id} role="tooltip" className="upload-step__help-popover whitespace-pre-line">
@@ -193,7 +196,7 @@ function StepRail({
           <span
             className={cn(
               "upload-step__badge",
-              done && !active && "upload-step__badge--done step-complete-pop",
+              done && !active && "upload-step__badge--done",
               active && "upload-step__badge--active",
             )}
           >
@@ -215,7 +218,7 @@ function StepRail({
             {active ? (
               <>
                 {description ? <p className="upload-step__description">{description}</p> : null}
-                {children ? <div className="upload-step__content step-reveal">{children}</div> : null}
+                {children ? <div className="upload-step__content">{children}</div> : null}
               </>
             ) : null}
           </div>
@@ -229,16 +232,20 @@ function StepRail({
 function UploadPageHeader() {
   return (
     <PageHeader className="mb-6">
-      <PageTitle className="text-white">
-        Upload & Grow Your Coral
+      <PageTitle>
+        Upload Your Data
       </PageTitle>
     </PageHeader>
   );
 }
 
+// The upload flow sits on the shared OceanPageFrame — the same static
+// ambient reef backdrop used by the dashboard and insights pages.
+const UploadPageFrame = OceanPageFrame;
+
 function GuestUploadPage() {
   return (
-    <PageShell>
+    <UploadPageFrame>
       <UploadPageHeader />
       <section className="max-w-2xl border-l-2 border-primary/50 pl-6 py-1">
         <SectionTitle>Login to build a run</SectionTitle>
@@ -260,14 +267,11 @@ function GuestUploadPage() {
             Run analysis to grow your coral on the dashboard
           </li>
         </ol>
-        <Link
-          to="/login"
-          className="mt-6 inline-flex px-5 py-2.5 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition"
-        >
-          Login to continue →
-        </Link>
+        <Button asChild variant="outline" className={cn(LANDING_BUTTON, "mt-6")}>
+          <Link to="/login">Login to continue →</Link>
+        </Button>
       </section>
-    </PageShell>
+    </UploadPageFrame>
   );
 }
 
@@ -323,9 +327,8 @@ function UploadDropzone({
       }}
       className={cn("upload-dropzone", saving && "pointer-events-none opacity-50", className)}
     >
-      <span className="upload-dropzone__glow" aria-hidden />
-      <FilePlus2 className="relative text-primary" size={22} strokeWidth={1.75} />
-      <span className="relative text-sm font-semibold text-foreground">
+      <FilePlus2 className="relative text-foreground/95" size={22} strokeWidth={1.75} />
+      <span className="upload-dropzone__label relative text-sm leading-[1.65] text-foreground/95">
         Drop files here or click to add
       </span>
     </div>
@@ -337,13 +340,21 @@ function SavedFilesList({ uploads }: { uploads: Upload[] }) {
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-semibold text-foreground" role="status">
+      <p className="text-sm font-bold leading-[1.65] text-foreground/95" role="status">
         {uploads.length} file{uploads.length === 1 ? "" : "s"} saved
       </p>
-      <ul className="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/50 bg-card/30">
+      <ul className="flex flex-wrap gap-2">
         {uploads.map((upload) => (
-          <li key={upload.upload_id} className="px-4 py-3">
-            <p className="break-all text-sm font-medium">{upload.filename ?? upload.upload_id}</p>
+          <li
+            key={upload.upload_id}
+            className="inline-flex w-64 max-w-full items-center rounded-[10px] border border-foreground/20 bg-background/80 px-3 py-1.5"
+          >
+            <p
+              className="truncate text-sm leading-[1.65] text-foreground/95"
+              title={upload.filename ?? upload.upload_id}
+            >
+              {upload.filename ?? upload.upload_id}
+            </p>
           </li>
         ))}
       </ul>
@@ -361,22 +372,26 @@ function DraftFileRow({
   onRemove: (id: string) => void;
 }) {
   return (
-    <li className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+    <li className="inline-flex w-64 max-w-full items-center gap-1.5 rounded-[10px] border border-foreground/20 bg-background/80 py-1 pl-3 pr-1">
       <div className="min-w-0 flex-1">
-        <p className="break-all text-sm font-medium">{row.file.name}</p>
+        <p className="truncate text-sm leading-[1.65] text-foreground/95" title={row.file.name}>
+          {row.file.name}
+        </p>
         {row.error ? (
-          <p className="mt-1 break-words text-xs text-primary">{row.error}</p>
+          <p className="break-words text-xs text-primary">{row.error}</p>
         ) : null}
       </div>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         disabled={saving}
         aria-label={`Remove ${row.file.name}`}
         onClick={() => onRemove(row.id)}
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-background/50 hover:text-primary disabled:opacity-50"
+        className="shrink-0 rounded-full text-muted-foreground/90 hover:text-foreground"
       >
-        <Trash2 size={16} />
-      </button>
+        <Trash2 size={14} />
+      </Button>
     </li>
   );
 }
@@ -396,8 +411,8 @@ function UnsupportedFilesList({
 
   return (
     <div className={cn("space-y-2", className)}>
-      <p className="text-sm font-semibold text-foreground">Unsupported files</p>
-      <ul className="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/50 bg-card/30">
+      <p className="text-sm font-bold leading-[1.65] text-foreground/95">Unsupported files, please delete them</p>
+      <ul className="flex flex-wrap gap-2">
         {rows.map((row) => (
           <DraftFileRow key={row.id} row={row} saving={saving} onRemove={onRemove} />
         ))}
@@ -406,55 +421,135 @@ function UnsupportedFilesList({
   );
 }
 
-function SourceReviewRow({
+function SourceChip({
   upload,
   disabled,
-  saving,
-  onPlatformChange,
+  updating,
 }: {
   upload: Upload;
   disabled: boolean;
-  saving: boolean;
-  onPlatformChange: (uploadId: string, platform: SocialPlatform) => void;
+  updating: boolean;
 }) {
-  const currentPlatform = isKnownPlatform(upload.platform) ? upload.platform : "";
-
   return (
-    <li className="flex flex-col gap-3 rounded-xl border border-border/50 bg-card/30 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+    <li
+      draggable={!disabled && !updating}
+      onDragStart={(event) => {
+        event.dataTransfer.setData("text/upload-id", upload.upload_id);
+        event.dataTransfer.effectAllowed = "move";
+      }}
+      className={cn(
+        "flex items-center gap-2 rounded-[10px] border border-foreground/20 bg-background/80 px-3 py-1.5",
+        disabled || updating ? "opacity-60" : "cursor-grab active:cursor-grabbing",
+      )}
+    >
       <div className="min-w-0 flex-1">
-        <p className="break-all text-sm font-medium">{upload.filename}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {upload.post_count.toLocaleString()} posts
-          {upload.comment_count > 0
-            ? ` · ${upload.comment_count.toLocaleString()} comments`
-            : ""}
+        <p className="truncate text-sm leading-[1.65] text-foreground/95" title={upload.filename}>
+          {upload.filename}
         </p>
       </div>
-      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-        <select
-          id={`source-${upload.upload_id}`}
-          aria-label={`Source for ${upload.filename}`}
-          value={currentPlatform}
-          disabled={disabled || saving}
-          onChange={(e) =>
-            onPlatformChange(upload.upload_id, e.target.value as SocialPlatform)
-          }
-          className="upload-source-select"
-        >
-            {!currentPlatform ? (
-              <option value="" disabled>
-                Select source…
-              </option>
-            ) : null}
-            {PLATFORMS.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.label}
-              </option>
-            ))}
-        </select>
-        {saving ? <LoaderCircle className="spin-icon shrink-0 text-muted-foreground" size={16} /> : null}
-      </div>
+      {updating ? (
+        <LoaderCircle className="spin-icon shrink-0 text-muted-foreground" size={14} />
+      ) : (
+        <GripVertical size={14} className="shrink-0 text-muted-foreground/70" aria-hidden />
+      )}
     </li>
+  );
+}
+
+/**
+ * Three source boxes side by side. Files are pre-sorted by the detected
+ * platform; the user drags a chip into another box if it landed wrong.
+ */
+function SourceSortBoard({
+  uploads,
+  disabled,
+  updatingId,
+  onPlatformChange,
+}: {
+  uploads: Upload[];
+  disabled: boolean;
+  updatingId: string | null;
+  onPlatformChange: (uploadId: string, platform: SocialPlatform) => void;
+}) {
+  const [dragOverBox, setDragOverBox] = useState<SocialPlatform | null>(null);
+  const unsorted = uploads.filter((upload) => !isKnownPlatform(upload.platform));
+
+  const dropInto = (platform: SocialPlatform) => (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragOverBox(null);
+    if (disabled) return;
+    const uploadId = event.dataTransfer.getData("text/upload-id");
+    const upload = uploads.find((u) => u.upload_id === uploadId);
+    if (!upload || upload.platform === platform) return;
+    onPlatformChange(upload.upload_id, platform);
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm leading-[1.65] text-foreground/95">
+        We sorted your files by source. Drag a chip into another box if it landed wrong.
+      </p>
+
+      {unsorted.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-sm font-bold leading-[1.65] text-foreground/95">
+            Unsorted — drag these into a box
+          </p>
+          <ul className="flex flex-wrap gap-2">
+            {unsorted.map((upload) => (
+              <SourceChip
+                key={upload.upload_id}
+                upload={upload}
+                disabled={disabled}
+                updating={updatingId === upload.upload_id}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {PLATFORMS.map((platform) => {
+          const items = uploads.filter((upload) => upload.platform === platform.key);
+          const isTarget = dragOverBox === platform.key;
+          return (
+            <div
+              key={platform.key}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setDragOverBox(platform.key);
+              }}
+              onDragLeave={() =>
+                setDragOverBox((current) => (current === platform.key ? null : current))
+              }
+              onDrop={dropInto(platform.key)}
+              className={cn(
+                "min-h-[9rem] space-y-2 border p-3 transition-colors",
+                isTarget
+                  ? "border-foreground/60 bg-background/60"
+                  : "border-foreground/20 bg-background/40",
+              )}
+            >
+              <p className="text-center text-sm font-bold leading-[1.65] text-foreground/95">{platform.label}</p>
+              <ul className="space-y-2">
+                {items.map((upload) => (
+                  <SourceChip
+                    key={upload.upload_id}
+                    upload={upload}
+                    disabled={disabled}
+                    updating={updatingId === upload.upload_id}
+                  />
+                ))}
+              </ul>
+              {items.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Drop files here</p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -479,37 +574,6 @@ export function UploadPage() {
   const [uploadOpen, setUploadOpen] = useState(true);
   const [completedAnalysisId, setCompletedAnalysisId] = useState<string | null>(null);
   const uploadDraftSnapshotRef = useRef<DraftFile[]>([]);
-  const duplicateNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [duplicateNotice, setDuplicateNotice] = useState<DuplicateNotice | null>(null);
-
-  const clearDuplicateNotice = useCallback(() => {
-    if (duplicateNoticeTimerRef.current) {
-      clearTimeout(duplicateNoticeTimerRef.current);
-      duplicateNoticeTimerRef.current = null;
-    }
-    setDuplicateNotice(null);
-  }, []);
-
-  const showDuplicateNotice = useCallback((names: string[]) => {
-    if (!names.length) return;
-    if (duplicateNoticeTimerRef.current) {
-      clearTimeout(duplicateNoticeTimerRef.current);
-    }
-    setDuplicateNotice({ names });
-    duplicateNoticeTimerRef.current = setTimeout(() => {
-      setDuplicateNotice(null);
-      duplicateNoticeTimerRef.current = null;
-    }, 3200);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (duplicateNoticeTimerRef.current) {
-        clearTimeout(duplicateNoticeTimerRef.current);
-      }
-    },
-    [],
-  );
 
   const addFiles = useCallback(
     async (files: FileList | null) => {
@@ -531,7 +595,6 @@ export function UploadPage() {
       }
 
       const nextRows: DraftFile[] = [];
-      const skippedInList: string[] = [];
 
       for (let i = 0; i < accepted.length; i++) {
         const file = accepted[i];
@@ -542,7 +605,6 @@ export function UploadPage() {
           ...nextRows,
         ]);
         if (existingDraft) {
-          skippedInList.push(file.name);
           continue;
         }
 
@@ -555,18 +617,10 @@ export function UploadPage() {
 
       if (nextRows.length) {
         setDraft((prev) => [...prev, ...nextRows]);
-        clearDuplicateNotice();
-      }
-
-      if (skippedInList.length) {
-        showDuplicateNotice(skippedInList);
-      }
-
-      if (!skippedInList.length || nextRows.length) {
         setError(null);
       }
     },
-    [clearDuplicateNotice, draft, idPrefix, showDuplicateNotice],
+    [draft, idPrefix],
   );
 
   const knownUploads = mergeUploads(reviewUploads ?? [], uploadsState.uploads);
@@ -584,9 +638,9 @@ export function UploadPage() {
 
   if (authLoading) {
     return (
-      <PageShell>
+      <UploadPageFrame>
         <UploadPageHeader />
-      </PageShell>
+      </UploadPageFrame>
     );
   }
 
@@ -604,21 +658,24 @@ export function UploadPage() {
         prev?.map((upload) => (upload.upload_id === uploadId ? updated : upload)) ?? null,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update source.");
+      const message = err instanceof Error ? err.message : "Failed to update source.";
+      setError(message);
     } finally {
       setUpdatingPlatformId(null);
     }
   };
 
-  const finishAnalyze = async (uploadIdsForAnalyze: string[]) => {
+  const finishAnalyze = async () => {
     if (!user) return;
     setProgress("Analysing…");
     const analysis = await analyzeUploads({
       user_id: user.uid,
-      upload_ids: uploadIdsForAnalyze,
       persist: true,
       name: runName.trim() || undefined,
     });
+
+    invalidateAnalysisCache(user.uid);
+    cacheAnalysis(analysis);
 
     // Advance to step 4 before any await so step 3 never paints with a blank name.
     setCompletedAnalysisId(analysis.analysis_id);
@@ -644,16 +701,17 @@ export function UploadPage() {
     setProgress(null);
     setCompletedAnalysisId(null);
     uploadDraftSnapshotRef.current = [];
-    clearDuplicateNotice();
     setActiveStep(1);
   };
 
   const viewCoral = () => {
-    navigate("/dashboard", {
-      state: completedAnalysisId
-        ? { analysisId: completedAnalysisId, showDiff: true }
-        : undefined,
-    });
+    if (completedAnalysisId) {
+      navigate(`/dashboard?run=${encodeURIComponent(completedAnalysisId)}`, {
+        state: { analysisId: completedAnalysisId, showDiff: true },
+      });
+      return;
+    }
+    navigate("/dashboard");
   };
 
   const goBackToUpload = () => {
@@ -724,10 +782,10 @@ export function UploadPage() {
     setSaving(true);
     setError(null);
     try {
-      const uploadIds = reviewUploads.map((upload) => upload.upload_id);
-      await finishAnalyze(uploadIds);
+      await finishAnalyze();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to analyze.");
+      const message = err instanceof Error ? err.message : "Failed to analyze.";
+      setError(message);
     } finally {
       setSaving(false);
       setProgress(null);
@@ -735,7 +793,6 @@ export function UploadPage() {
   };
 
   const removeDraftFile = (id: string) => {
-    clearDuplicateNotice();
     setDraft((prev) => {
       const next = prev.filter((item) => item.id !== id);
       uploadDraftSnapshotRef.current = uploadDraftSnapshotRef.current.filter((item) => item.id !== id);
@@ -761,7 +818,6 @@ export function UploadPage() {
   const allSourcesConfirmed =
     activeReviewUploads.every((upload) => isKnownPlatform(upload.platform));
   const totalReviewPosts = activeReviewUploads.reduce((sum, upload) => sum + upload.post_count, 0);
-  const duplicateNoticeText = buildDuplicateNotice(duplicateNotice);
 
   const continueToSourcesStep = () => {
     if (hasUnsupportedFiles || !hasSupportedUploads) return;
@@ -777,7 +833,7 @@ export function UploadPage() {
   };
 
   return (
-    <PageShell>
+    <UploadPageFrame>
       <UploadPageHeader />
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:gap-10 xl:gap-12">
@@ -795,7 +851,6 @@ export function UploadPage() {
             }}
           />
 
-          <div className="upload-flow-panel rounded-3xl border border-border/60 bg-card/40 p-5 sm:p-6">
           <div className="upload-flow">
           <StepRail
             n={1}
@@ -813,9 +868,9 @@ export function UploadPage() {
             }
           >
             {formatError ? (
-              <p className="mb-4 text-sm text-primary break-words" role="alert">
-                {formatError}
-              </p>
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription role="alert">{formatError}</AlertDescription>
+              </Alert>
             ) : null}
 
             {uploadOpen ? (
@@ -826,15 +881,9 @@ export function UploadPage() {
                   onAddFiles={(files) => void addFiles(files)}
                 />
 
-                {duplicateNoticeText ? (
-                  <p className="upload-duplicate-notice mt-2" role="status" aria-live="polite">
-                    {duplicateNoticeText}
-                  </p>
-                ) : null}
-
                 {draft.length > 0 ? (
                   <div className="mt-3 space-y-4">
-                    <ul className="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/50 bg-card/30">
+                    <ul className="flex flex-wrap gap-2">
                       {draft.map((row) => (
                         <DraftFileRow
                           key={row.id}
@@ -846,26 +895,21 @@ export function UploadPage() {
                     </ul>
 
                     <div className="flex justify-end">
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
+                        className={LANDING_BUTTON}
                         disabled={saving || hasUnsupportedFiles}
                         onClick={() => withAuth(() => handleIngest())}
-                        className={PRIMARY_CTA_CLASS}
                       >
                         Ingest
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : null}
               </>
             ) : (
               <>
-                {duplicateNoticeText ? (
-                  <p className="upload-duplicate-notice mb-4" role="status" aria-live="polite">
-                    {duplicateNoticeText}
-                  </p>
-                ) : null}
-
                 <SavedFilesList uploads={supportedUploads} />
 
                 <UnsupportedFilesList
@@ -876,22 +920,24 @@ export function UploadPage() {
                 />
 
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
+                    className={LANDING_BUTTON}
                     disabled={saving}
                     onClick={goBackToUpload}
-                    className={SECONDARY_CTA_CLASS}
                   >
                     Back
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="outline"
+                    className={LANDING_BUTTON}
                     disabled={saving || hasUnsupportedFiles || !hasSupportedUploads}
                     onClick={() => withAuth(() => continueToSourcesStep())}
-                    className={PRIMARY_CTA_CLASS}
                   >
                     Continue
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -906,32 +952,28 @@ export function UploadPage() {
             title="Confirm Export Sources"
           >
             {activeReviewUploads.length > 0 ? (
-              <ul className="space-y-2">
-                {activeReviewUploads.map((upload) => (
-                  <SourceReviewRow
-                    key={upload.upload_id}
-                    upload={upload}
-                    disabled={saving}
-                    saving={updatingPlatformId === upload.upload_id}
-                    onPlatformChange={(uploadId, platform) =>
-                      void changeUploadPlatform(uploadId, platform)
-                    }
-                  />
-                ))}
-              </ul>
+              <SourceSortBoard
+                uploads={activeReviewUploads}
+                disabled={saving}
+                updatingId={updatingPlatformId}
+                onPlatformChange={(uploadId, platform) =>
+                  void changeUploadPlatform(uploadId, platform)
+                }
+              />
             ) : null}
             <div className="mt-5 flex justify-end">
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                className={LANDING_BUTTON}
                 disabled={saving || !allSourcesConfirmed || Boolean(updatingPlatformId)}
                 onClick={() => {
                   setRunName((prev) => prev.trim() || defaultRunName());
                   setActiveStep(3);
                 }}
-                className={PRIMARY_CTA_CLASS}
               >
                 Continue
-              </button>
+              </Button>
             </div>
           </StepRail>
 
@@ -942,25 +984,26 @@ export function UploadPage() {
             locked={!sourcesStepDone}
             tone={UPLOAD_STEP_TONES.grow}
             title="Run Exports"
-            titleHelp={RUN_NAME_HELP}
-            titleHelpAriaLabel="About runs"
           >
-            <label className="mb-4 block max-w-md">
-              <span className="text-[0.975rem] font-bold tracking-tight">Name</span>
-              <input
+            <div className="mb-4 max-w-md space-y-1.5">
+              <Label htmlFor="run-name" className="text-[0.975rem] font-bold tracking-tight">
+                Name
+              </Label>
+              <Input
+                id="run-name"
                 type="text"
                 value={runName}
                 onChange={(e) => setRunName(e.target.value)}
                 disabled={saving || !hasIngested}
                 maxLength={120}
-                className="mt-1.5 w-full rounded-xl border border-border bg-card/30 px-4 py-2.5 text-sm outline-none transition focus:border-accent/50 disabled:opacity-50"
+                className="rounded-[10px] border-foreground/20 bg-background/80 dark:bg-background/80 focus-visible:border-foreground/40 focus-visible:ring-0"
               />
-            </label>
+            </div>
 
             {flowError ? (
-              <p className="mb-4 text-sm text-primary break-words" role="alert">
-                {flowError}
-              </p>
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription role="alert">{flowError}</AlertDescription>
+              </Alert>
             ) : null}
             {progress ? (
               <div
@@ -973,14 +1016,15 @@ export function UploadPage() {
             ) : null}
 
             <div className="flex justify-end">
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                className={LANDING_BUTTON}
                 disabled={saving || !hasIngested || draft.length > 0 || totalReviewPosts === 0}
                 onClick={() => withAuth(() => void confirmGrow())}
-                className={PRIMARY_CTA_CLASS}
               >
                 Upload
-              </button>
+              </Button>
             </div>
             {totalReviewPosts === 0 && hasIngested && draft.length === 0 ? (
               <p className="mt-3 text-xs text-muted-foreground">
@@ -1003,83 +1047,83 @@ export function UploadPage() {
             tone={UPLOAD_STEP_TONES.view}
             isLast
             title="View Your Coral"
-            description="Run completed. Your coral is ready on the dashboard. Open it to explore the result, or start another run."
+            description="Your coral is ready on the dashboard. Open it to explore the result, or start another run."
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={resetUploadFlow}
-                className={SECONDARY_CTA_CLASS}
-              >
+              <Button type="button" variant="outline" className={LANDING_BUTTON} onClick={resetUploadFlow}>
                 Run new
-              </button>
-              <button
-                type="button"
-                onClick={viewCoral}
-                className={PRIMARY_CTA_CLASS}
-              >
+              </Button>
+              <Button type="button" variant="outline" className={LANDING_BUTTON} onClick={viewCoral}>
                 View
-              </button>
+              </Button>
             </div>
           </StepRail>
-          </div>
           </div>
         </div>
 
         <aside className="min-w-0 lg:pl-2">
-          <div className="lg:sticky lg:top-24 rounded-2xl border border-border/40 bg-card/25 p-4">
-            <p className="text-[0.975rem] font-bold tracking-tight">My Runs</p>
+          <Card className="rounded-2xl border-border/40 bg-card/25 py-4 lg:sticky lg:top-24">
+            <CardHeader className="px-4">
+              <CardTitle className="text-[0.975rem] font-bold tracking-tight">My Runs</CardTitle>
+            </CardHeader>
 
-            {history.status === "loading" ? (
-              <p className="mt-5 text-sm text-muted-foreground">Loading…</p>
-            ) : history.status === "error" ? (
-              <p className="mt-5 text-sm text-primary">{history.error}</p>
-            ) : analyses.length === 0 ? (
-              <p className="mt-5 text-sm text-muted-foreground">No runs yet.</p>
-            ) : (
-              <ul className="mt-5 space-y-0 divide-y divide-border/40">
-                {analyses.map((analysis, index) => {
-                  const runNumber = runCount - index;
-                  const older = analyses[index + 1];
-                  const postDelta = older ? analysis.post_count - older.post_count : null;
-                  const topicDelta = older ? topicCount(analysis) - topicCount(older) : null;
-                  const isLatest = index === 0;
+            <CardContent className="px-4">
+              {history.status === "loading" ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : history.status === "error" ? (
+                <p className="text-sm text-primary">{history.error}</p>
+              ) : analyses.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No runs yet.</p>
+              ) : (
+                <ScrollArea className="max-h-[28rem]">
+                  <ul className="space-y-0 divide-y divide-border/40 pr-3">
+                    {analyses.map((analysis, index) => {
+                      const runNumber = runCount - index;
+                      const older = analyses[index + 1];
+                      const postDelta = older ? analysis.post_count - older.post_count : null;
+                      const topicDelta = older ? topicCount(analysis) - topicCount(older) : null;
+                      const isLatest = index === 0;
 
-                  return (
-                    <li key={analysis.analysis_id} className="py-4 first:pt-0">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <p className="min-w-0 break-words font-semibold">
-                          {formatRunLabel(analysis, runNumber)}
-                          {isLatest ? (
-                            <span className="ml-2 text-[0.65rem] font-bold tracking-wider text-accent">
-                              LATEST
-                            </span>
-                          ) : null}
-                        </p>
-                      </div>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {formatShortDate(analysis.created_at)} · {platformsLabel(analysis)} ·{" "}
-                        {analysis.post_count.toLocaleString()} posts
-                        {postDelta !== null && postDelta !== 0 ? (
-                          <span className="text-accent">
-                            {" "}
-                            ({postDelta > 0 ? "+" : ""}
-                            {postDelta}
-                            {topicDelta !== null && topicDelta !== 0
-                              ? ` · ${topicDelta > 0 ? "+" : ""}${topicDelta} topics`
-                              : ""}
-                            )
-                          </span>
-                        ) : null}
-                      </p>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+                      return (
+                        <li key={analysis.analysis_id} className="py-4 first:pt-0">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p className="min-w-0 break-words font-semibold">
+                              {formatRunLabel(analysis, runNumber)}
+                              {isLatest ? (
+                                <Badge
+                                  variant="outline"
+                                  className="ml-2 border-accent/40 text-[0.65rem] font-bold tracking-wider text-accent"
+                                >
+                                  LATEST
+                                </Badge>
+                              ) : null}
+                            </p>
+                          </div>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            {formatShortDate(analysis.created_at)} · {platformsLabel(analysis)} ·{" "}
+                            {analysis.post_count.toLocaleString()} posts
+                            {postDelta !== null && postDelta !== 0 ? (
+                              <span className="text-accent">
+                                {" "}
+                                ({postDelta > 0 ? "+" : ""}
+                                {postDelta}
+                                {topicDelta !== null && topicDelta !== 0
+                                  ? ` · ${topicDelta > 0 ? "+" : ""}${topicDelta} topics`
+                                  : ""}
+                                )
+                              </span>
+                            ) : null}
+                          </p>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
         </aside>
       </div>
-    </PageShell>
+    </UploadPageFrame>
   );
 }
