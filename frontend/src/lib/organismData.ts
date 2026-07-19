@@ -22,10 +22,10 @@ function parseTopic(raw: unknown): OrganismTopic | null {
     typeof topic.postVolume === "number"
       ? topic.postVolume
       : typeof topic.count === "number"
-        ? topic.count
-        : typeof topic.weight === "number"
-          ? topic.weight
-          : 0;
+      ? topic.count
+      : typeof topic.weight === "number"
+      ? topic.weight
+      : 0;
 
   const sentiment = typeof topic.sentiment === "number" ? topic.sentiment : 0;
 
@@ -103,7 +103,10 @@ function accountAgeDaysFromInsights(insights: PostInsight[]): number {
     .filter((value) => !Number.isNaN(value));
   if (!dates.length) return 0;
   const earliest = Math.min(...dates);
-  return Math.max(0, Math.floor((Date.now() - earliest) / (1000 * 60 * 60 * 24)));
+  return Math.max(
+    0,
+    Math.floor((Date.now() - earliest) / (1000 * 60 * 60 * 24)),
+  );
 }
 
 /** Rebuild organism topics from post_insights filtered to one platform. */
@@ -127,7 +130,8 @@ export function organismDataForPlatform(
   const compounds = new Map<string, number[]>();
 
   for (const post of filtered) {
-    const compound = typeof post.sentiment_compound === "number" ? post.sentiment_compound : 0;
+    const compound =
+      typeof post.sentiment_compound === "number" ? post.sentiment_compound : 0;
     for (const topic of post.topics || []) {
       const name = String(topic).trim();
       if (!name) continue;
@@ -144,7 +148,9 @@ export function organismDataForPlatform(
     .map(([name, postVolume]) => {
       const scores = compounds.get(name) || [];
       const sentiment =
-        scores.length > 0 ? scores.reduce((sum, n) => sum + n, 0) / scores.length : 0;
+        scores.length > 0
+          ? scores.reduce((sum, n) => sum + n, 0) / scores.length
+          : 0;
       return { name, postVolume, sentiment };
     });
 
@@ -152,7 +158,9 @@ export function organismDataForPlatform(
     accountAgeDays: accountAgeDaysFromInsights(filtered) || base.accountAgeDays,
     topics,
     posts: filtered
-      .filter((item): item is PostInsight & { id: string } => Boolean(item.id))
+      .filter(
+        (item): item is PostInsight & { id: string } => Boolean(item.id),
+      )
       .map((item) => ({
         id: item.id,
         created_at: item.created_at ?? null,
@@ -168,7 +176,9 @@ export function organismDataForPlatform(
   };
 }
 
-export function formatAnalysisDiff(diff: AnalysisDiff | null | undefined): string | null {
+export function formatAnalysisDiff(
+  diff: AnalysisDiff | null | undefined,
+): string | null {
   if (!diff) return null;
   if (diff.no_meaningful_change) {
     return "No meaningful change - this looks like data you already had.";
@@ -217,14 +227,17 @@ export function formatSentimentRatio(value: number | null | undefined) {
 }
 
 export function getSentimentRatio(
-  summary: {
-    positive?: number;
-    neutral?: number;
-    negative?: number;
-    positive_pct?: number;
-    neutral_pct?: number;
-    negative_pct?: number;
-  } | null | undefined,
+  summary:
+    | {
+        positive?: number;
+        neutral?: number;
+        negative?: number;
+        positive_pct?: number;
+        neutral_pct?: number;
+        negative_pct?: number;
+      }
+    | null
+    | undefined,
   key: "positive" | "neutral" | "negative",
 ) {
   if (!summary) return null;

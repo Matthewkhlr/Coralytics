@@ -39,23 +39,30 @@ MAX_TOPICS_PER_POST = 3
 # it) or getting weakly-related topics tagged (raise it).
 MIN_SIMILARITY = 0.08
 
+# If a non-empty post does not clear MIN_SIMILARITY, keep the best weak
+# match above this floor. If it has no vocabulary overlap with the taxonomy
+# at all, fall back to GENERAL_TOPIC so every analyzable post can still grow
+# a coral polyp.
+MIN_FALLBACK_SIMILARITY = 0.04
+GENERAL_TOPIC = "general"
+
 # Each value is a short bag of representative words/phrases for that
 # category -- not exhaustive, just enough for TF-IDF to place the topic
 # in a sensible region of the vector space. Add/adjust categories here
 # as you see what topics actually show up in real demo data.
 TOPIC_TAXONOMY: dict[str, str] = {
     "travel": "travel vacation trip flight airport hotel destination explore "
-              "adventure tourism beach mountain journey abroad",
+              "adventure tourism beach mountain journey abroad hike hiking outdoors",
     "technology": "technology software app coding programming ai computer "
-                  "tech startup gadget update device engineering",
+                  "tech startup gadget update device engineering framework release performance",
     "food": "food recipe restaurant cooking meal dinner lunch coffee "
             "cuisine delicious taste kitchen chef",
     "fitness": "fitness workout gym exercise running training health diet "
-               "muscle yoga marathon cardio strength",
+               "muscle yoga marathon cardio strength wellness wellbeing burnout break",
     "career": "career job work office promotion interview resume hiring "
-              "team colleague professional workplace manager",
+              "team colleague professional workplace manager launch shipped feature project",
     "relationships": "relationship family friend love partner marriage "
-                      "dating wedding kids parenting husband wife",
+                      "dating wedding kids parenting husband wife community grateful",
     "finance": "finance money investing stock budget savings crypto "
                "market economy salary invest financial",
     "entertainment": "movie music concert show game entertainment film "
@@ -67,8 +74,34 @@ TOPIC_TAXONOMY: dict[str, str] = {
     "sports": "sports team match game player league championship score "
               "tournament coach athlete",
     "art": "art design creative painting photography drawing craft "
-           "aesthetic gallery illustration",
+           "aesthetic gallery illustration book books writing reading",
 }
+
+ASSIGNABLE_TOPICS: tuple[str, ...] = (*TOPIC_TAXONOMY.keys(), GENERAL_TOPIC)
+
+
+def list_assignable_topics() -> list[str]:
+    """Return the canonical topic labels a post can receive."""
+    return list(ASSIGNABLE_TOPICS)
+
+
+def _topic_text(post: dict[str, Any]) -> str:
+    """Build the text used for topic assignment from normalized post fields."""
+    parts = [str(post.get("content") or "").strip()]
+
+    hashtags = post.get("hashtags")
+    if isinstance(hashtags, list):
+        parts.extend(str(tag).replace("#", " ") for tag in hashtags)
+
+    source_context = post.get("source_context")
+    if source_context:
+        parts.append(str(source_context))
+
+    platform = post.get("platform")
+    if platform:
+        parts.append(str(platform))
+
+    return " ".join(part for part in parts if part).strip()
 
 
 def assign_topics(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -78,7 +111,7 @@ def assign_topics(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     the same order as the input. `topics` is ordered most-relevant-first
     and may be an empty list if nothing cleared MIN_SIMILARITY.
     """
-    contents = [(post.get("content") or "").strip() for post in posts]
+    contents = [_topic_text(post) for post in posts]
 
     if not any(contents):
         return [{"id": post.get("id"), "topics": []} for post in posts]
@@ -109,6 +142,11 @@ def assign_topics(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             for name, score in scored_topics[:MAX_TOPICS_PER_POST]
             if score >= MIN_SIMILARITY
         ]
+
+        if not top_topics and contents[index]:
+            best_name, best_score = scored_topics[0]
+            top_topics = [best_name if best_score >= MIN_FALLBACK_SIMILARITY else GENERAL_TOPIC]
+
         results.append({"id": post.get("id"), "topics": top_topics})
 
     return results

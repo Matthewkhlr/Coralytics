@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { OrganismGenerator, OrganismPost } from "../organismTypes";
+import { getSentiment, getCategory, SENTIMENT_COLORS, CATEGORY_COLORS } from "./organismColors";
 
 // Helper: recursively build a skinny, forking twig off a tip.
 // Fixed bug: children used to attach to `segment` (already offset by length/2)
@@ -12,7 +13,7 @@ function makeBranch(
   length: number,
   radius: number,
   depth: number,
-  material: THREE.Material
+  material: THREE.Material,
 ) {
   if (depth < 0 || length <= 0 || radius <= 0) return;
 
@@ -69,10 +70,14 @@ function makeSnakeStem(
   radiusStart: number,
   radiusEnd: number,
   material: THREE.Material,
-  options: { segments?: number; wobble?: number } = {}
+  options: { segments?: number; wobble?: number } = {},
 ): {
   tip: THREE.Object3D;
-  sampleAt: (t: number) => { position: THREE.Vector3; quaternion: THREE.Quaternion; radius: number };
+  sampleAt: (t: number) => {
+    position: THREE.Vector3;
+    quaternion: THREE.Quaternion;
+    radius: number;
+  };
 } {
   const segments = Math.max(1, options.segments ?? 4);
   const wobble = options.wobble ?? 0.3; // radians of extra random tilt per segment
@@ -94,9 +99,17 @@ function makeSnakeStem(
     radiusEnd: number;
   }[] = [];
 
-  // persistent drift direction so the stem curves smoothly in a general
-  // direction rather than jittering back and forth every segment
-  let driftAzimuth = Math.random() * Math.PI * 2;
+  // Drift starts at 0 — meaning "keep going the direction the branch is
+  // already pointed" (branchRoot already leans outward from the trunk
+  // before makeSnakeStem is even called). It's then clamped to a bounded
+  // range rather than left as an unconstrained random walk: previously it
+  // could drift a full 0-2π on the very first segment and keep wandering
+  // indefinitely after, which — given enough segments on a long branch —
+  // let it spiral all the way back around the trunk's own axis and grow
+  // straight back into it. Clamping keeps the organic side-to-side wobble
+  // but guarantees it can never turn more than ~65° off the outward path.
+  let driftAzimuth = 0;
+  const MAX_DRIFT_FROM_OUTWARD = 1.15; // radians
 
   for (let i = 0; i < segments; i++) {
     const tStart = i / segments;
@@ -108,7 +121,11 @@ function makeSnakeStem(
 
     // small incremental bend: mostly keep going the same way, with a slight
     // upward-biased wobble so the stem still generally reaches outward/up
-    driftAzimuth += (Math.random() - 0.5) * 0.5;
+    driftAzimuth = THREE.MathUtils.clamp(
+      driftAzimuth + (Math.random() - 0.5) * 0.5,
+      -MAX_DRIFT_FROM_OUTWARD,
+      MAX_DRIFT_FROM_OUTWARD,
+    );
     const tilt = (Math.random() - 0.35) * wobble;
 
     pivot.rotation.set(0, driftAzimuth, 0);
@@ -125,7 +142,13 @@ function makeSnakeStem(
       radiusEnd: segRadiusTop,
     });
 
-    const geometry = new THREE.CylinderGeometry(segRadiusTop, segRadiusBottom, segLength, 6, 1);
+    const geometry = new THREE.CylinderGeometry(
+      segRadiusTop,
+      segRadiusBottom,
+      segLength,
+      6,
+      1,
+    );
     const segment = new THREE.Mesh(geometry, material);
     segment.position.y = segLength / 2;
     pivot.add(segment);
@@ -149,11 +172,14 @@ function makeSnakeStem(
       const isLast = i === segRecords.length - 1;
 
       if (targetLength <= acc + rec.length || isLast) {
-        const localT = rec.length > 0
-          ? THREE.MathUtils.clamp((targetLength - acc) / rec.length, 0, 1)
-          : 0;
+        const localT =
+          rec.length > 0
+            ? THREE.MathUtils.clamp((targetLength - acc) / rec.length, 0, 1)
+            : 0;
         const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(rec.quat);
-        const position = rec.startPos.clone().addScaledVector(dir, localT * rec.length);
+        const position = rec.startPos
+          .clone()
+          .addScaledVector(dir, localT * rec.length);
         const radius = THREE.MathUtils.lerp(rec.radiusStart, rec.radiusEnd, localT);
         return { position, quaternion: rec.quat.clone(), radius };
       }
@@ -162,7 +188,11 @@ function makeSnakeStem(
     }
 
     // totalLength === 0 edge case
-    return { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), radius: radiusStart };
+    return {
+      position: new THREE.Vector3(),
+      quaternion: new THREE.Quaternion(),
+      radius: radiusStart,
+    };
   };
 
   return { tip: current, sampleAt };
@@ -171,20 +201,49 @@ function makeSnakeStem(
 // Builds one small polyp (base + ring of static tentacles), sized relative
 // to the branch radius it's growing from so it reads as a small bump on the
 // branch rather than a fixed-size bead threaded through it.
+//
+// The base is colored by sentiment, the tentacles by category — swap which
+// gets `baseColor` vs `tentacleColor` at the call site if you want it the
+// other way around. Materials are pulled from a shared cache keyed by hex
+// color rather than created fresh per polyp, since with hundreds of posts
+// that'd otherwise mean hundreds of near-duplicate materials.
 const POLYP_SCALE = 0.55; // turn down for more minimal/subtle polyps, up for chunkier ones
 
-function buildPolyp(branchRadius: number): THREE.Group {
+function getCachedMaterial(
+  cache: Map<string, THREE.MeshStandardMaterial>,
+  color: string,
+): THREE.MeshStandardMaterial {
+  let mat = cache.get(color);
+  if (!mat) {
+    mat = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.7,
+      metalness: 0.0,
+      flatShading: true,
+    });
+    cache.set(color, mat);
+  }
+  return mat;
+}
+
+function buildPolyp(
+  branchRadius: number,
+  baseColor: string,
+  tentacleColor: string,
+  materialCache: Map<string, THREE.MeshStandardMaterial>,
+): THREE.Group {
   const polyp = new THREE.Group();
 
   const polypBaseRadius = branchRadius * 1.3 * POLYP_SCALE;
   const polypBaseHeight = branchRadius * 2.2 * POLYP_SCALE;
-  const polypBaseGeometry = new THREE.CylinderGeometry(polypBaseRadius, polypBaseRadius, polypBaseHeight, 12, 1);
-  const polypBaseMaterial = new THREE.MeshStandardMaterial({
-    color: "#ffd5f2",
-    roughness: 0.7,
-    metalness: 0.0,
-    flatShading: true,
-  });
+  const polypBaseGeometry = new THREE.CylinderGeometry(
+    polypBaseRadius,
+    polypBaseRadius,
+    polypBaseHeight,
+    12,
+    1,
+  );
+  const polypBaseMaterial = getCachedMaterial(materialCache, baseColor);
 
   const polypBase = new THREE.Mesh(polypBaseGeometry, polypBaseMaterial);
   polypBase.position.y = polypBaseHeight / 2;
@@ -192,13 +251,14 @@ function buildPolyp(branchRadius: number): THREE.Group {
 
   const tentacleHeight = branchRadius * 3 * POLYP_SCALE;
   const tentacleRadius = branchRadius * 0.4 * POLYP_SCALE;
-  const tentacleGeom = new THREE.CylinderGeometry(tentacleRadius, tentacleRadius, tentacleHeight, 6, 1);
-  const tentacleMat = new THREE.MeshStandardMaterial({
-    color: "#f97316",
-    roughness: 0.7,
-    metalness: 0.0,
-    flatShading: true,
-  });
+  const tentacleGeom = new THREE.CylinderGeometry(
+    tentacleRadius,
+    tentacleRadius,
+    tentacleHeight,
+    6,
+    1,
+  );
+  const tentacleMat = getCachedMaterial(materialCache, tentacleColor);
 
   const tentacleNum = 6;
   const ringRadius = branchRadius * 1.8 * POLYP_SCALE;
@@ -213,7 +273,6 @@ function buildPolyp(branchRadius: number): THREE.Group {
       polypBaseHeight + tentacleHeight / 2,
       Math.sin(angle) * ringRadius,
     );
-
     tentacle.rotation.z = Math.sin(angle) * baseTilt;
     tentacle.rotation.x = -Math.cos(angle) * baseTilt;
 
@@ -224,8 +283,19 @@ function buildPolyp(branchRadius: number): THREE.Group {
 }
 
 export const coralV4: OrganismGenerator = (scene, data) => {
+  // ===== LOG 1: generator entry =====
+  console.log("[coralV4] generator start", {
+    accountAgeDays: data.accountAgeDays,
+    topics: (data.topics ?? []).map(t => ({ name: t.name, postVolume: t.postVolume })),
+    postsLength: data.posts?.length ?? 0,
+  });
+
   const coral = new THREE.Group();
   scene.add(coral);
+
+  // shared across every polyp built below, keyed by hex color, so we don't
+  // mint duplicate materials for every post
+  const polypMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
 
   const posts = data.posts ?? [];
 
@@ -251,6 +321,10 @@ export const coralV4: OrganismGenerator = (scene, data) => {
     .filter((t) => (postsByTopic.get(t.name)?.length ?? 0) > 0)
     .map((t) => ({ name: t.name, postVolume: t.postVolume }));
 
+  // ===== LOG 2: topic grouping =====
+  console.log("[coralV4] postsByTopic keys", [...postsByTopic.keys()]);
+  console.log("[coralV4] topicEntries", topicEntries.map(t => t.name));
+
   const accountAgeDays = data.accountAgeDays ?? 0;
 
   // trunk height based on account age (1–8 units)
@@ -258,9 +332,11 @@ export const coralV4: OrganismGenerator = (scene, data) => {
   const trunkHeight = THREE.MathUtils.clamp(ageYears, 1, 8);
 
   // ========== 1. Trunk ==========
+  const trunkRadiusTop = 0.15;
+  const trunkRadiusBottom = 0.25;
   const trunkGeometry = new THREE.CylinderGeometry(
-    0.15,          // radiusTop
-    0.25,          // radiusBottom
+    trunkRadiusTop,
+    trunkRadiusBottom,
     trunkHeight,
     16,
     1,
@@ -296,45 +372,86 @@ export const coralV4: OrganismGenerator = (scene, data) => {
   topicEntries.forEach((entry, index) => {
     const postsThisTopic = postsByTopic.get(entry.name) ?? [];
 
+    // ===== LOG 3: per-branch info =====
+    const t = (index + 1) / (topicCount + 1);
+    const heightOnTrunk = t * trunkHeight;
+    console.log("[coralV4] branch", entry.name, {
+      index,
+      postCount: postsThisTopic.length,
+      heightOnTrunk,
+    });
+
     // place branch root somewhere up the trunk
     // distribute branches evenly around the trunk, with a slight spiral
     // so more-populous topics sit slightly higher
-    const t = (index + 1) / (topicCount + 1);
-    const heightOnTrunk = t * trunkHeight;
-
     const branchRoot = new THREE.Object3D();
-    branchRoot.position.y = heightOnTrunk;
 
     // Store the topic name so the 3D viewport click handler can find it
     // when the user clicks on any mesh in this branch.
-    branchRoot.userData.topicName = entry.name;
+    (branchRoot as any).userData.topicName = entry.name;
 
     // distribute branches around the trunk, with a little randomness so it
     // doesn't read as mechanically even, plus an outward tilt so branches
     // actually splay away from the trunk instead of standing parallel to it
     const baseAngle = index * (Math.PI * 2 / Math.max(topicCount, 1));
-    branchRoot.rotation.y = baseAngle + (Math.random() - 0.5) * 0.4;
+    const branchAzimuth = baseAngle + (Math.random() - 0.5) * 0.4;
+    branchRoot.rotation.y = branchAzimuth;
     branchRoot.rotateZ(-(0.35 + Math.random() * 0.3));
 
-    trunk.add(branchRoot);
+    // Start the branch's origin at the trunk's actual surface (in the same
+    // horizontal direction it's about to grow toward), not on the trunk's
+    // central axis. branchRoot previously sat at (0, heightOnTrunk, 0) —
+    // right on the centerline, which is inside the trunk's solid volume
+    // since the trunk has real radius there — so anything sampled near the
+    // start of the curve (including the first few polyps) was still close
+    // enough to the axis to clip through the trunk mesh.
+    const trunkRadiusHere = THREE.MathUtils.lerp(
+      trunkRadiusBottom,
+      trunkRadiusTop,
+      THREE.MathUtils.clamp(heightOnTrunk / trunkHeight, 0, 1),
+    );
+    branchRoot.position.set(
+      Math.cos(branchAzimuth) * trunkRadiusHere,
+      heightOnTrunk,
+      Math.sin(branchAzimuth) * trunkRadiusHere,
+    );
+
+    // Bug: this used to be `trunk.add(branchRoot)`. `trunk`'s own local
+    // origin is its geometric center (CylinderGeometry is centered by
+    // default), not its base — trunk.position.y just says where that
+    // center sits inside `coral`. A child added to `trunk` therefore lands
+    // at trunkHeight/2 + heightOnTrunk in global terms, not heightOnTrunk
+    // as intended, so branches ended up anywhere from mid-trunk to well
+    // above the trunk's actual tip (floating, disconnected) depending on
+    // t. Parenting to `coral` instead makes heightOnTrunk measure straight
+    // up from the true base (global y = 0), which is what it was meant to.
+    coral.add(branchRoot);
 
     // scale branch length by topic post volume, but also make sure
     // there's physically enough room for every polyp: each one occupies
     // roughly MIN_POLYP_SPACING of branch length
     const postCount = postsThisTopic.length;
     const volumeFactor = Math.max(0.5, entry.postVolume / maxVolume);
-    const idealLength = Math.max(baseBranchLength * volumeFactor, postCount * MIN_POLYP_SPACING);
+    const idealLength = Math.max(
+      baseBranchLength * volumeFactor,
+      postCount * MIN_POLYP_SPACING,
+    );
 
     // soft cap: below this, branches grow linearly with post count so spacing
     // is always respected. Beyond it, growth tapers off (sqrt) instead of
     // hard-clamping.
     const SOFT_CAP_LENGTH = 4;
-    const branchLength = idealLength <= SOFT_CAP_LENGTH
-      ? idealLength
-      : SOFT_CAP_LENGTH + Math.sqrt(idealLength - SOFT_CAP_LENGTH);
+    const branchLength =
+      idealLength <= SOFT_CAP_LENGTH
+        ? idealLength
+        : SOFT_CAP_LENGTH + Math.sqrt(idealLength - SOFT_CAP_LENGTH);
 
     // mesh segment count: kept modest for performance/visual smoothness only.
-    const stemSegments = THREE.MathUtils.clamp(Math.round(branchLength / 0.3), 3, 10);
+    const stemSegments = THREE.MathUtils.clamp(
+      Math.round(branchLength / 0.3),
+      3,
+      10,
+    );
     const { tip, sampleAt } = makeSnakeStem(
       branchRoot,
       branchLength,
@@ -345,14 +462,25 @@ export const coralV4: OrganismGenerator = (scene, data) => {
     );
 
     // decorative forking twigs sprouting from the stem's tip
-    makeBranch(tip, branchLength * 0.5, baseBranchRadius * 0.55, baseBranchDepth, branchMaterial);
+    makeBranch(
+      tip,
+      branchLength * 0.5,
+      baseBranchRadius * 0.55,
+      baseBranchDepth,
+      branchMaterial,
+    );
 
     // ========== 3. Polyps along this branch: one per post ==========
     postsThisTopic.forEach((post, postIndex) => {
       const postT = (postIndex + 1) / (postsThisTopic.length + 1); // 0..1
       const sample = sampleAt(postT);
 
-      const polyp = buildPolyp(sample.radius);
+      const sentiment = getSentiment(post);
+      const category = getCategory(post);
+      const baseColor = SENTIMENT_COLORS[sentiment];
+      const tentacleColor = CATEGORY_COLORS[category];
+
+      const polyp = buildPolyp(sample.radius, baseColor, tentacleColor, polypMaterialCache);
 
       const azimuth = Math.random() * Math.PI * 2;
       const outwardTilt = 1.15 + Math.random() * 0.55; // ~66-97 degrees off the branch axis
@@ -375,12 +503,12 @@ export const coralV4: OrganismGenerator = (scene, data) => {
   // ========== 4. Cleanup ==========
   const cleanup = () => {
     scene.remove(coral);
-    coral.traverse(obj => {
+    coral.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         const mesh = obj as THREE.Mesh;
         mesh.geometry.dispose();
         if (Array.isArray(mesh.material)) {
-          mesh.material.forEach(m => m.dispose());
+          mesh.material.forEach((m) => m.dispose());
         } else {
           mesh.material.dispose();
         }
