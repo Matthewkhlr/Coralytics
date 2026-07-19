@@ -4,9 +4,7 @@ import type {
   AnalyzeRequest,
   Analysis,
   CreateShareRequest,
-  HealthResponse,
   PostSummary,
-  PrivacySettings,
   ShareRecord,
   UploadResponse,
   UploadsResponse,
@@ -82,10 +80,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function getHealth() {
-  return apiFetch<HealthResponse>("/health");
-}
-
 export function listAnalyses(userId: string) {
   return apiFetch<AnalysesResponse>(`/analyses/${encodeURIComponent(userId)}`);
 }
@@ -144,7 +138,6 @@ export function analyzeUploads(request: AnalyzeRequest) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       user_id: request.user_id,
-      upload_ids: request.upload_ids,
       posts: [],
       persist: request.persist ?? true,
       name: request.name?.trim() || null,
@@ -162,23 +155,6 @@ export function listPostsByTopic(
   if (platform) params.set("platform", platform);
   return apiFetch<{ posts: PostSummary[] }>(
     `/uploads/${encodeURIComponent(userId)}/posts/by-topic?${params}`,
-  );
-}
-
-export function getPrivacySettings(userId: string) {
-  return apiFetch<PrivacySettings>(
-    `/users/${encodeURIComponent(userId)}/privacy-settings`,
-  );
-}
-
-export function updatePrivacySettings(userId: string, settings: Partial<PrivacySettings>) {
-  return apiFetch<PrivacySettings>(
-    `/users/${encodeURIComponent(userId)}/privacy-settings`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(settings),
-    },
   );
 }
 

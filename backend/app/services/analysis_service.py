@@ -366,23 +366,17 @@ def run_user_analysis(
     user_id: str,
     *,
     persist: bool = True,
-    upload_ids: list[str] | None = None,
     name: str | None = None,
 ) -> dict[str, Any]:
-    """Run sentiment + topic analysis over a user's raw DB1 exports
-    and optionally persist the results to DB2.
+    """Run analysis over the user's cumulative, deduplicated post history.
 
-    When upload_ids is provided and non-empty, only those uploads are analyzed.
-    When omitted or empty, all uploads are pooled (canonical combined reef).
+    Every persisted result is a snapshot of the same canonical reef. Individual
+    uploads are never analyzed in isolation.
 
     Set persist=False to preview results without writing to Firestore
     (useful for local testing against the emulator).
     """
-    scoped_ids = [uid for uid in (upload_ids or []) if uid]
-    posts = firestore_service.list_user_posts(
-        user_id,
-        upload_ids=scoped_ids or None,
-    )
+    posts = firestore_service.list_all_user_posts(user_id)
     if not posts:
         return _empty_result(user_id)
 
@@ -404,7 +398,8 @@ def run_user_analysis(
     evolution = _build_evolution(sentiment_timeline, topics, prior_snapshots)
 
     prior_analysis = None
-    prior_list = firestore_service.list_analyses(user_id)
+    # Summaries only — full post_insights hydration is unnecessary for diffs.
+    prior_list = firestore_service.list_analyses(user_id, hydrate=False)
     if prior_list:
         prior_analysis = prior_list[0]
 
@@ -437,7 +432,7 @@ def run_user_analysis(
         "posts": organism_posts,
     }
 
-    resolved_upload_ids = scoped_ids or sorted(
+    resolved_upload_ids = sorted(
         {str(post["_upload_id"]) for post in posts if post.get("_upload_id")}
     )
 

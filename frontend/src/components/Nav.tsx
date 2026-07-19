@@ -1,7 +1,18 @@
+import { useState } from "react";
 import { NavLink, Link } from "react-router-dom";
+import { Menu, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { hasCachedProfile } from "@/lib/profileCache";
 import { ProfileMenu } from "@/components/ProfileMenu";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 const links = [
@@ -11,55 +22,123 @@ const links = [
   { to: "/insights", label: "Insights" },
 ] as const;
 
-const AUTH_SLOT_CLASS = "flex w-[10.5rem] shrink-0 items-center justify-end";
+function BrandMark({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "flex size-8 items-center justify-center rounded-full border border-foreground/40 font-display text-[17px] font-semibold text-foreground/95",
+        className,
+      )}
+      aria-hidden
+    >
+      C
+    </span>
+  );
+}
+
+function NavLinks({
+  className,
+  onNavigate,
+}: {
+  className?: string;
+  onNavigate?: () => void;
+}) {
+  return (
+    <nav className={cn("flex items-center gap-2", className)}>
+      {links.map((l) => (
+        <NavLink
+          key={l.to}
+          to={l.to}
+          end={"end" in l ? l.end : false}
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            cn(
+              // Explicit type styles — identical to the hero "Explore" button.
+              // h-9 matches the size-9 icon buttons so text and icons share
+              // the same center line.
+              "relative inline-flex h-9 items-center px-3 text-[12px] font-medium uppercase tracking-[0.22em] transition-colors",
+              isActive
+                ? "text-foreground"
+                : "text-muted-foreground/90 hover:text-foreground",
+            )
+          }
+        >
+          {({ isActive }) => (
+            <>
+              {l.label}
+              {isActive ? (
+                <span
+                  className="absolute inset-x-3 bottom-0 h-px bg-foreground/50"
+                  aria-hidden
+                />
+              ) : null}
+            </>
+          )}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
 
 export function Nav() {
   const { user, loading } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const showProfile = Boolean(user) || (loading && hasCachedProfile());
 
   return (
-    <header className="sticky top-0 z-40 w-full backdrop-blur-xl bg-background/60 border-b border-border/40">
-      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-4 px-6">
-        <Link to="/" className="flex items-center gap-2.5 group shrink-0">
-          <span
-            className="w-8 h-8 rounded-md border border-dashed border-border/60 bg-card/40"
-            aria-label="Logo placeholder"
-          />
-          <span className="text-lg font-bold tracking-tight text-white">
-            Coralytics
-          </span>
-        </Link>
+    <header className="sticky top-0 z-40 w-full">
+      <div className="flex h-[4.75rem] w-full items-center justify-between gap-4 px-5 md:px-10">
+        <div className="flex items-center gap-3">
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open menu">
+                <Menu />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72">
+              <SheetHeader>
+                <SheetTitle className="font-display text-left">Menu</SheetTitle>
+              </SheetHeader>
+              <NavLinks
+                className="mt-6 flex-col items-stretch gap-1 [&>a]:px-2"
+                onNavigate={() => setMobileOpen(false)}
+              />
+            </SheetContent>
+          </Sheet>
 
-        <nav className="hidden md:flex items-center gap-1">
-          {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              end={"end" in l ? l.end : false}
-              className={({ isActive }) =>
-                cn(
-                  "px-3 py-1.5 rounded-full text-sm transition",
-                  isActive
-                    ? "text-foreground bg-card"
-                    : "text-muted-foreground hover:text-foreground hover:bg-card/60",
-                )
-              }
-            >
-              {l.label}
-            </NavLink>
-          ))}
-        </nav>
+          <Link to="/" className="flex items-center gap-3 shrink-0">
+            <BrandMark />
+            <span className="font-display text-2xl font-medium text-foreground">
+              Coralytics
+            </span>
+          </Link>
+        </div>
 
-        <div className={AUTH_SLOT_CLASS}>
+        <NavLinks className="hidden md:flex" />
+
+        <div className="flex shrink-0 items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="rounded-full text-muted-foreground/90 hover:text-foreground"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? <Sun /> : <Moon />}
+          </Button>
+
           {showProfile ? (
             <ProfileMenu />
           ) : loading ? null : (
-            <Link
-              to="/login"
-              className="inline-flex items-center whitespace-nowrap px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition"
+            <Button
+              asChild
+              variant="outline"
+              className="h-auto rounded-none border-foreground/35 bg-accent/10 px-5 py-2.5 text-[12px] font-medium uppercase tracking-[0.22em] backdrop-blur-md hover:bg-accent/20 hover:border-foreground/60"
             >
-              Login / Sign up
-            </Link>
+              <Link to="/login">Login / Sign up</Link>
+            </Button>
           )}
         </div>
       </div>

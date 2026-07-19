@@ -40,101 +40,211 @@
   --color-sentiment-negative: var(--sentiment-negative);
   --color-reef: var(--reef);
   --color-coral: var(--coral);
-  --font-sans: Arial, Helvetica, sans-serif;
-  --font-display: Arial, Helvetica, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
 }
 
 :root {
-  --radius: 0.875rem;
+  /* Square corners across cards/containers to match the rectangular buttons */
+  --radius: 0rem;
 
-  /* Coral Reef palette — deep ocean with vivid coral accents */
-  --background: oklch(0.19 0.04 240);
-  --foreground: oklch(0.97 0.01 200);
+  /* Light coral reef — soft lagoon pearl with vivid coral */
+  --background: oklch(0.975 0.012 210);
+  --foreground: oklch(0.28 0.04 230);
 
-  --card: oklch(0.28 0.05 220);
-  --card-foreground: oklch(0.97 0.01 200);
+  --card: oklch(0.995 0.008 205);
+  --card-foreground: oklch(0.28 0.04 230);
 
-  --popover: oklch(0.28 0.05 220);
-  --popover-foreground: oklch(0.97 0.01 200);
+  --popover: oklch(0.995 0.008 205);
+  --popover-foreground: oklch(0.28 0.04 230);
 
-  --primary: oklch(0.70 0.19 22);
-  --primary-foreground: oklch(0.15 0.03 240);
+  --primary: oklch(0.62 0.185 22);
+  --primary-foreground: oklch(0.99 0.01 90);
 
-  --secondary: oklch(0.34 0.06 210);
-  --secondary-foreground: oklch(0.97 0.01 200);
+  --secondary: oklch(0.93 0.025 200);
+  --secondary-foreground: oklch(0.32 0.05 220);
 
-  --muted: oklch(0.30 0.04 220);
-  --muted-foreground: oklch(0.75 0.03 210);
+  --muted: oklch(0.94 0.018 205);
+  --muted-foreground: oklch(0.48 0.03 220);
 
-  --accent: oklch(0.75 0.10 190);
-  --accent-foreground: oklch(0.15 0.03 240);
+  --accent: oklch(0.58 0.09 195);
+  --accent-foreground: oklch(0.99 0.01 200);
 
-  --destructive: oklch(0.62 0.22 22);
-  --destructive-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(0.99 0 0);
 
-  --border: oklch(0.45 0.05 200 / 30%);
-  --input: oklch(0.45 0.05 200 / 25%);
-  --ring: oklch(0.75 0.10 190);
+  --border: oklch(0.55 0.04 210 / 22%);
+  --input: oklch(0.55 0.04 210 / 18%);
+  --ring: oklch(0.62 0.185 22);
 
-  --reef: oklch(0.75 0.10 190);
-  --coral: oklch(0.70 0.19 22);
+  --reef: oklch(0.58 0.09 195);
+  --coral: oklch(0.62 0.185 22);
 
-  --sentiment-positive: oklch(0.78 0.15 165);
-  --sentiment-neutral: oklch(0.82 0.07 85);
-  --sentiment-negative: oklch(0.65 0.22 25);
+  --sentiment-positive: oklch(0.58 0.13 165);
+  --sentiment-neutral: oklch(0.68 0.08 85);
+  --sentiment-negative: oklch(0.55 0.2 25);
 
-  --chart-1: oklch(0.70 0.19 22);
-  --chart-2: oklch(0.75 0.10 190);
-  --chart-3: oklch(0.78 0.15 165);
-  --chart-4: oklch(0.82 0.07 85);
-  --chart-5: oklch(0.65 0.15 300);
+  --chart-1: oklch(0.62 0.185 22);
+  --chart-2: oklch(0.58 0.09 195);
+  --chart-3: oklch(0.58 0.13 165);
+  --chart-4: oklch(0.68 0.08 85);
+  --chart-5: oklch(0.55 0.12 300);
+
+  --surface-deep: oklch(0.96 0.015 210);
+  --surface-panel: oklch(0.99 0.01 205 / 0.72);
+  --surface-inset: oklch(0.94 0.02 210 / 0.7);
+  --surface-viewport: oklch(0.92 0.025 210);
+  --glow-coral: oklch(0.62 0.185 22 / 0.14);
+  --glow-reef: oklch(0.58 0.09 195 / 0.14);
+  --glow-ocean: oklch(0.55 0.08 230 / 0.12);
+  --glow-grow: oklch(0.58 0.13 165 / 0.12);
+  --ocean-spot-1: oklch(0.82 0.06 200 / 0.55);
+  --ocean-spot-2: oklch(0.78 0.12 22 / 0.22);
+  --ocean-spot-3: oklch(0.8 0.07 185 / 0.35);
 }
 
 .dark {
-  --background: oklch(0.19 0.04 240);
-  --foreground: oklch(0.97 0.01 200);
+  /* Deep ocean night — vivid coral accents */
+  --background: oklch(0.18 0.035 235);
+  --foreground: oklch(0.97 0.012 200);
+
+  --card: oklch(0.26 0.045 225);
+  --card-foreground: oklch(0.97 0.012 200);
+
+  --popover: oklch(0.26 0.045 225);
+  --popover-foreground: oklch(0.97 0.012 200);
+
+  --primary: oklch(0.72 0.175 22);
+  --primary-foreground: oklch(0.16 0.03 240);
+
+  --secondary: oklch(0.32 0.05 215);
+  --secondary-foreground: oklch(0.97 0.012 200);
+
+  --muted: oklch(0.28 0.035 225);
+  --muted-foreground: oklch(0.76 0.03 210);
+
+  --accent: oklch(0.76 0.095 190);
+  --accent-foreground: oklch(0.16 0.03 240);
+
+  --destructive: oklch(0.64 0.2 22);
+  --destructive-foreground: oklch(0.98 0 0);
+
+  --border: oklch(0.5 0.045 200 / 32%);
+  --input: oklch(0.5 0.045 200 / 26%);
+  --ring: oklch(0.76 0.095 190);
+
+  --reef: oklch(0.76 0.095 190);
+  --coral: oklch(0.72 0.175 22);
+
+  --sentiment-positive: oklch(0.78 0.14 165);
+  --sentiment-neutral: oklch(0.82 0.07 85);
+  --sentiment-negative: oklch(0.66 0.2 25);
+
+  --chart-1: oklch(0.72 0.175 22);
+  --chart-2: oklch(0.76 0.095 190);
+  --chart-3: oklch(0.78 0.14 165);
+  --chart-4: oklch(0.82 0.07 85);
+  --chart-5: oklch(0.65 0.14 300);
+
+  --surface-deep: oklch(0.17 0.035 235);
+  --surface-panel: oklch(0.26 0.045 225 / 0.5);
+  --surface-inset: oklch(0.17 0.035 235 / 0.5);
+  --surface-viewport: oklch(0.15 0.035 235);
+  --glow-coral: oklch(0.72 0.175 22 / 0.16);
+  --glow-reef: oklch(0.76 0.095 190 / 0.16);
+  --glow-ocean: oklch(0.55 0.09 230 / 0.18);
+  --glow-grow: oklch(0.78 0.14 165 / 0.14);
+  --ocean-spot-1: oklch(0.34 0.07 210 / 0.5);
+  --ocean-spot-2: oklch(0.55 0.15 22 / 0.28);
+  --ocean-spot-3: oklch(0.3 0.08 195 / 0.45);
 }
 
 @layer base {
   * {
-    border-color: var(--color-border);
-  }
-
-  html {
-    scrollbar-gutter: stable;
+    @apply border-border outline-ring/50;
   }
 
   html,
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
-    font-family: Arial, Helvetica, sans-serif;
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    letter-spacing: 0.01em;
     margin: 0;
     min-width: 320px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+    letter-spacing: -0.01em;
+    font-weight: 500;
   }
 
   button,
   a {
     font: inherit;
   }
+
+  /* Consistent right-side scrolling across pages: the page always owns the
+     vertical scrollbar and reserves its gutter so tabs don't shift. */
+  html {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  /* Same scrollbar on every page and inner view: grey rounded thumb on a
+     dark track (matches the reference macOS-style bar). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #606060 #2b2b2b;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: #2b2b2b;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: #606060;
+    border-radius: 999px;
+    border: 2px solid #2b2b2b;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: #7a7a7a;
+  }
 }
 
 @utility bg-ocean-radial {
   background:
-    radial-gradient(60% 40% at 20% 10%, oklch(0.35 0.08 210 / 0.5), transparent 60%),
-    radial-gradient(50% 40% at 90% 20%, oklch(0.55 0.16 22 / 0.28), transparent 60%),
-    radial-gradient(70% 50% at 60% 100%, oklch(0.30 0.09 195 / 0.45), transparent 60%),
+    radial-gradient(ellipse 80% 50% at 10% -10%, var(--ocean-spot-2), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, var(--ocean-spot-1), transparent 50%),
+    radial-gradient(ellipse 50% 35% at 70% 100%, var(--ocean-spot-3), transparent 55%),
     var(--background);
 }
 
-/* Flat UI — no drop shadows anywhere */
-@layer base {
-  *,
-  *::before,
-  *::after {
-    box-shadow: none !important;
-    text-shadow: none !important;
-  }
+@utility font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+}
+
+/* Small uppercase label — nav links, eyebrows, meta rows (design.html) */
+@utility text-caps {
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 400;
 }
 
 /* Organism viewport (Three.js host) */
@@ -150,9 +260,10 @@
   position: relative;
   flex: 1;
   min-height: 280px;
-  border-radius: 1rem;
+  border-radius: 1.1rem;
   overflow: hidden;
-  background: oklch(0.16 0.04 240);
+  background: var(--surface-viewport);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
 }
 
 .organism-viewport canvas {
@@ -168,7 +279,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: oklch(0.16 0.04 240 / 0.7);
+  background: color-mix(in oklab, var(--surface-viewport) 78%, transparent);
   color: var(--muted-foreground);
   font-size: 0.875rem;
 }
@@ -180,9 +291,71 @@
   z-index: 1;
   font-size: 0.7rem;
   color: var(--muted-foreground);
-  background: oklch(0.19 0.04 240 / 0.7);
-  padding: 0.25rem 0.5rem;
+  background: color-mix(in oklab, var(--background) 78%, transparent);
+  backdrop-filter: blur(8px);
+  padding: 0.25rem 0.55rem;
   border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  max-width: calc(100% - 24px);
+}
+
+.viewport-tooltip {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  font-size: 0.75rem;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  backdrop-filter: blur(10px);
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viewport-scrubber {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 38px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--background) 82%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.viewport-scrubber-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.viewport-scrubber-range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.viewport-scrubber-value {
+  font-size: 0.7rem;
+  color: var(--foreground);
+  flex-shrink: 0;
+  min-width: 5.5rem;
+  text-align: right;
 }
 
 @keyframes spin {
@@ -195,101 +368,10 @@
   animation: spin 1s linear infinite;
 }
 
-/* Buttons — flat, no drop shadows */
-button,
-[role="button"],
-.upload-step__btn,
-.upload-dropzone {
-  box-shadow: none;
-}
-
-button:hover,
-button:focus-visible,
-button:active,
-[role="button"]:hover,
-[role="button"]:focus-visible,
-.upload-step__btn:hover:not(:disabled),
-.upload-step__btn:focus-visible,
-.upload-step__btn--primary,
-.upload-step__btn--primary:hover:not(:disabled),
-.upload-dropzone:hover {
-  box-shadow: none;
-}
-
-@keyframes step-reveal {
-  from {
-    opacity: 0;
-    transform: translateY(-0.5rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes step-complete-pop {
-  0% {
-    transform: scale(0.82);
-  }
-  55% {
-    transform: scale(1.12);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-.step-reveal {
-  animation: step-reveal 260ms ease-out both;
-}
-
-.step-complete-pop {
-  animation: step-complete-pop 320ms ease-out both;
-}
-
-/* Landing page — hero entrance + step progression */
-@keyframes landing-fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(1.1rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-
-.landing-hero-enter {
-  animation: landing-fade-up 0.75s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.landing-hero-enter--1 {
-  animation-delay: 0.1s;
-}
-
-.landing-hero-enter--2 {
-  animation-delay: 0.2s;
-}
-
-.landing-hero-enter--3 {
-  animation-delay: 0.28s;
-}
-
-.landing-hero-enter--4 {
-  animation-delay: 0.38s;
-}
-
-.landing-hero-enter--5 {
-  animation-delay: 0.48s;
-}
-
-/* Upload flow — deep ocean reef theme */
+/* Upload flow — exhibit card surfaces (matches landing "How it works") */
 .upload-flow-panel {
-  background:
-    radial-gradient(70% 50% at 0% 0%, oklch(0.55 0.16 22 / 0.08), transparent 55%),
-    radial-gradient(60% 45% at 100% 20%, oklch(0.75 0.10 190 / 0.1), transparent 50%),
-    oklch(0.28 0.05 220 / 0.45);
+  background: color-mix(in oklab, var(--background) 45%, transparent);
+  backdrop-filter: blur(10px);
 }
 
 .upload-flow {
@@ -316,9 +398,9 @@ button:active,
   position: relative;
   display: flex;
   flex-direction: column;
-  border-radius: 1.25rem;
-  border: 1px solid oklch(0.45 0.05 200 / 28%);
-  background: oklch(0.19 0.04 240 / 0.55);
+  border-radius: 0;
+  border: 1px solid color-mix(in oklab, var(--foreground) 18%, transparent);
+  background: transparent;
   overflow: visible;
   transition:
     border-color 0.55s ease,
@@ -326,12 +408,11 @@ button:active,
 }
 
 .upload-step--active .upload-step__shell {
-  border-color: oklch(0.75 0.10 190 / 40%);
+  border-color: color-mix(in oklab, var(--foreground) 40%, transparent);
   transform: translateY(-1px);
-}
-
-.upload-step--coral.upload-step--active .upload-step__shell {
-  border-color: oklch(0.70 0.19 22 / 35%);
+  /* Same surface as the landing "How it works" card (bg-background/45 + blur) */
+  background: color-mix(in oklab, var(--background) 45%, transparent);
+  backdrop-filter: blur(10px);
 }
 
 .upload-step__front {
@@ -348,34 +429,12 @@ button:active,
   color: var(--foreground);
 }
 
+/* No coloured glows — the exhibit card style is flat */
 .upload-step__glow {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  opacity: 0.55;
-  transition: opacity 0.45s ease;
+  display: none;
 }
 
-.upload-step--coral .upload-step__glow {
-  background: radial-gradient(ellipse 80% 120% at 0% 50%, oklch(0.70 0.19 22 / 0.14), transparent 65%);
-}
-
-.upload-step--reef .upload-step__glow {
-  background: radial-gradient(ellipse 80% 120% at 0% 50%, oklch(0.75 0.10 190 / 0.16), transparent 65%);
-}
-
-.upload-step--ocean .upload-step__glow {
-  background: radial-gradient(ellipse 80% 120% at 0% 50%, oklch(0.55 0.09 230 / 0.18), transparent 65%);
-}
-
-.upload-step--grow .upload-step__glow {
-  background: radial-gradient(ellipse 80% 120% at 0% 50%, oklch(0.78 0.15 165 / 0.14), transparent 65%);
-}
-
-.upload-step--active .upload-step__glow {
-  opacity: 1;
-}
-
+/* Icon circle — matches the landing "How it works" step icons */
 .upload-step__badge {
   position: relative;
   z-index: 1;
@@ -387,42 +446,25 @@ button:active,
   width: 1.85rem;
   height: 1.85rem;
   border-radius: 999px;
-  border: 1px solid oklch(0.75 0.10 190 / 35%);
-  background: oklch(0.28 0.05 220 / 0.9);
+  border: 1px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+  background: color-mix(in oklab, var(--background) 80%, transparent);
   font-size: 0.7rem;
   font-weight: 800;
-  color: var(--accent);
-}
-
-.upload-step--coral .upload-step__badge {
-  border-color: oklch(0.70 0.19 22 / 35%);
-  color: var(--primary);
+  color: var(--muted-foreground);
 }
 
 .upload-step__badge--active {
-  border-color: oklch(0.75 0.10 190 / 55%);
-  background: oklch(0.34 0.06 210 / 0.95);
-}
-
-.upload-step--coral.upload-step--active .upload-step__badge--active {
-  border-color: oklch(0.70 0.19 22 / 50%);
+  border-color: color-mix(in oklab, var(--foreground) 40%, transparent);
+  color: var(--foreground);
 }
 
 .upload-step__badge--done {
-  border-color: oklch(0.70 0.19 22 / 45%);
-  background: oklch(0.70 0.19 22 / 12%);
-  color: var(--primary);
+  border-color: color-mix(in oklab, var(--foreground) 35%, transparent);
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+  color: var(--foreground);
 }
 
-.upload-step--coral .upload-step__badge--done,
-.upload-step--ocean .upload-step__badge--done,
-.upload-step--grow .upload-step__badge--done,
-.upload-step--reef .upload-step__badge--done {
-  border-color: oklch(0.70 0.19 22 / 45%);
-  background: oklch(0.70 0.19 22 / 12%);
-  color: var(--primary);
-}
-
+/* Matches the landing page "How it works" label (text-caps) */
 .upload-step__heading {
   position: relative;
   z-index: 1;
@@ -432,10 +474,13 @@ button:active,
   align-items: center;
   gap: 0.45rem;
   min-width: 0;
-  font-size: 0.975rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--muted-foreground);
   overflow: visible;
 }
 
@@ -447,54 +492,49 @@ button:active,
 }
 
 .upload-step__help {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.125rem;
-  height: 1.125rem;
-  border-radius: 999px;
-  border: 1px solid oklch(0.75 0.10 190 / 45%);
-  background: oklch(0.19 0.04 240 / 0.65);
-  color: var(--accent);
-  font-size: 0.65rem;
-  font-weight: 800;
-  line-height: 1;
+  display: inline-grid;
+  place-items: center;
+  line-height: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: color-mix(in oklab, var(--muted-foreground) 90%, transparent);
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition: color 0.2s ease;
 }
 
+/* Hover matches the nav icon hover: muted → foreground */
 .upload-step__help:hover,
 .upload-step__help:focus-visible {
-  border-color: oklch(0.75 0.10 190 / 70%);
-  background: oklch(0.34 0.06 210 / 0.85);
   color: var(--foreground);
   outline: none;
 }
 
+/* Body text matches the dropzone label: text-sm, foreground/95, 1.65 leading.
+   Wide enough that each "Supported …" sentence stays on its own line. */
 .upload-step__help-popover {
   position: absolute;
   top: calc(100% + 0.45rem);
   left: 50%;
   z-index: 40;
   width: max-content;
-  max-width: min(22rem, 90vw);
-  padding: 0.55rem 0.7rem;
-  border-radius: 0.65rem;
-  border: 1px solid oklch(0.45 0.05 200 / 35%);
-  background: oklch(0.22 0.05 225 / 0.98);
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-  font-weight: 500;
-  line-height: 1.45;
+  max-width: min(32rem, 90vw);
+  padding: 0.55rem 0.8rem;
+  border-radius: 0;
+  border: 1px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+  /* Same surface as the step number circle */
+  background: color-mix(in oklab, var(--background) 80%, transparent);
+  color: color-mix(in oklab, var(--foreground) 95%, transparent);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.65;
+  /* Undo the caps styling inherited from the step heading */
+  text-transform: none;
+  letter-spacing: 0.01em;
   white-space: pre-line;
   transform: translateX(-50%);
-  box-shadow: 0 8px 24px oklch(0.1 0.04 240 / 0.45);
-}
-
-@media (min-width: 640px) {
-  .upload-step__heading {
-    font-size: 1.0625rem;
-  }
 }
 
 .upload-step__summary {
@@ -512,11 +552,7 @@ button:active,
   width: 1px;
   height: 1.25rem;
   margin: 0.35rem auto 0.35rem 1.85rem;
-  background: linear-gradient(
-    to bottom,
-    oklch(0.75 0.10 190 / 35%),
-    oklch(0.45 0.05 200 / 20%)
-  );
+  background: color-mix(in oklab, var(--foreground) 25%, transparent);
 }
 
 .upload-step__inside {
@@ -535,10 +571,9 @@ button:active,
 }
 
 .upload-step--active .upload-step__inside-inner {
-  border-top: 1px solid oklch(0.45 0.05 200 / 22%);
-  background: oklch(0.16 0.04 240 / 0.45);
+  border-top: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  background: transparent;
   padding: 0 1.15rem 1.25rem;
-  animation: upload-step-inside-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .upload-step__description {
@@ -561,9 +596,9 @@ button:active,
   gap: 0.35rem;
   width: 100%;
   padding: 1.15rem 1.25rem;
-  border-radius: 1.25rem;
-  border: 1px dashed oklch(0.75 0.10 190 / 30%);
-  background: oklch(0.19 0.04 240 / 0.35);
+  border-radius: 0.75rem;
+  border: 1px dashed color-mix(in oklab, var(--foreground) 30%, transparent);
+  background: transparent;
   text-align: center;
   cursor: pointer;
   transition:
@@ -571,159 +606,48 @@ button:active,
     background 0.35s ease;
 }
 
+/* Hover matches the nav icon hover: muted → foreground */
 .upload-dropzone:hover {
-  border-color: oklch(0.70 0.19 22 / 45%);
-  background: oklch(0.22 0.05 225 / 0.5);
+  border-color: color-mix(in oklab, var(--foreground) 60%, transparent);
 }
 
-.upload-dropzone__glow {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    radial-gradient(ellipse 70% 80% at 50% 100%, oklch(0.75 0.10 190 / 0.12), transparent 60%),
-    radial-gradient(ellipse 50% 60% at 50% 0%, oklch(0.70 0.19 22 / 0.08), transparent 55%);
-}
-
-.upload-review-card {
-  border-radius: 1rem;
-  border: 1px solid oklch(0.45 0.05 200 / 25%);
-  background: oklch(0.19 0.04 240 / 0.4);
-  padding: 0.85rem 1rem;
-}
-
-.upload-source-select {
-  appearance: none;
-  min-width: 10.5rem;
-  padding: 0.55rem 2.35rem 0.55rem 0.95rem;
-  border-radius: 999px;
-  border: 1px solid oklch(0.75 0.10 190 / 38%);
-  background-color: oklch(0.17 0.04 240 / 0.72);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='oklch(0.75 0.10 190)' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.85rem center;
-  background-size: 0.85rem;
-  font-size: 0.875rem;
-  font-weight: 600;
+.upload-dropzone:hover .upload-dropzone__label {
   color: var(--foreground);
-  cursor: pointer;
-  transition:
-    border-color 0.2s ease,
-    background-color 0.2s ease;
-}
-
-.upload-source-select:hover:not(:disabled) {
-  border-color: oklch(0.70 0.19 22 / 42%);
-  background-color: oklch(0.20 0.05 225 / 0.78);
-}
-
-.upload-source-select:focus-visible {
-  outline: 2px solid oklch(0.70 0.19 22 / 48%);
-  outline-offset: 2px;
-}
-
-.upload-source-select:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.upload-step__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 12rem;
-  width: 100%;
-  padding: 0.72rem 1.35rem;
-  border: 1px solid oklch(0.75 0.10 190 / 45%);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--accent);
-  font-size: 0.875rem;
-  font-weight: 600;
-  position: relative;
-  overflow: hidden;
-  z-index: 1;
-  transition: color 0.3s ease, border-color 0.3s ease;
-}
-
-.upload-step__btn::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: oklch(0.75 0.10 190 / 90%);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
-  z-index: -1;
-}
-
-.upload-step__btn:hover:not(:disabled) {
-  color: var(--accent-foreground);
-  border-color: transparent;
-}
-
-.upload-step__btn:hover:not(:disabled)::before {
-  transform: scaleX(1);
-}
-
-.upload-step__btn--primary {
-  border-color: transparent;
-  background: var(--primary);
-  color: var(--primary-foreground);
-}
-
-.upload-step__btn--primary::before {
-  background: oklch(0.76 0.18 22);
-}
-
-.upload-step__btn--primary:hover:not(:disabled) {
-  color: var(--primary-foreground);
-}
-
-.upload-step__btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-@media (min-width: 640px) {
-  .upload-step__btn {
-    width: auto;
-  }
-}
-
-@keyframes upload-step-inside-in {
-  from {
-    opacity: 0;
-    transform: translateY(-0.35rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.upload-duplicate-notice {
-  border-radius: 0.75rem;
-  border: 1px solid oklch(0.75 0.1 190 / 28%);
-  background: oklch(0.75 0.1 190 / 10%);
-  padding: 0.55rem 0.75rem;
-  font-size: 0.75rem;
-  line-height: 1.45;
-  color: var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .step-reveal,
-  .step-complete-pop,
-  .landing-hero-enter,
   .upload-step,
   .upload-step__shell,
   .upload-step__front,
   .upload-step__inside,
-  .upload-step__inside-inner,
-  .upload-step__btn::before {
+  .upload-step__inside-inner {
     animation: none;
     transition: none;
   }
+}
+
+.insights-card-interactive {
+  cursor: pointer;
+  transition:
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.25s ease,
+    background 0.25s ease;
+}
+
+.insights-card-interactive:hover {
+  transform: translateY(-3px);
+}
+
+.insights-card-interactive[data-state="open"] {
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  background: color-mix(in oklab, var(--card) 92%, var(--accent));
+}
+
+.insights-tone-seg {
+  transition: flex-grow 0.35s ease, filter 0.2s ease, opacity 0.2s ease;
+}
+
+.insights-tone-seg:hover {
+  filter: brightness(1.15);
+  opacity: 1;
 }

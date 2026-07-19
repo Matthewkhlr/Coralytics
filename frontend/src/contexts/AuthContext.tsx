@@ -9,23 +9,29 @@ import {
 } from "react";
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   GoogleAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updatePassword,
   updateProfile,
   type User,
 } from "firebase/auth";
 import { setAuthTokenProvider } from "../api/client";
+import { invalidateAnalysisCache } from "../lib/analysisCache";
 import { auth } from "../lib/firebase";
 import {
+  changeUsernameClaim,
   claimUsername,
   isUsernameAvailable,
   resolveLoginEmail,
   validateUsername,
 } from "../lib/usernames";
 import { clearCachedProfile, writeCachedProfile } from "../lib/profileCache";
+import { invalidateUploadsCache } from "../lib/uploadsCache";
 
 type AuthContextValue = {
   user: User | null;
@@ -36,8 +42,16 @@ type AuthContextValue = {
   signUp: (username: string, email: string, password: string) => Promise<void>;
   /** Google login (existing) or Google sign-up (requires username) */
   loginWithGoogle: (username?: string) => Promise<void>;
+  /** Update display name + Firestore username claim */
+  updateUsername: (username: string) => Promise<void>;
+  /** Reauthenticate with current password, then set a new password */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logOut: () => Promise<void>;
 };
+
+function hasPasswordProvider(user: User) {
+  return user.providerData.some((provider) => provider.providerId === "password");
+}
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const googleProvider = new GoogleAuthProvider();
@@ -55,6 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         );
       } else {
         clearCachedProfile();
+        invalidateAnalysisCache();
+        invalidateUploadsCache();
       }
       setUser(nextUser);
       setLoading(false);
@@ -108,13 +124,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    if (!auth.currentUser) {
+      setUser(null);
+      return;
+    }
+    await auth.currentUser.reload();
+    setUser(auth.currentUser);
+  }, []);
+
+  const updateUsername = useCallback(
+    async (username: string) => {
+      const current = auth.currentUser;
+      if (!current) throw new Error("You must be signed in to change your username.");
+
+      const trimmed = username.trim();
+      const usernameError = validateUsername(trimmed);
+      if (usernameError) throw new Error(usernameError);
+
+      await changeUsernameClaim(
+        current.displayName,
+        trimmed,
+        current.uid,
+        current.email ?? "",
+      );
+      await updateProfile(current, { displayName: trimmed });
+      writeCachedProfile(trimmed, current.email);
+      await refreshUser();
+    },
+    [refreshUser],
+  );
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const current = auth.currentUser;
+    if (!current) throw new Error("You must be signed in to change your password.");
+    if (!current.email) throw new Error("Your account has no email address.");
+    if (!hasPasswordProvider(current)) {
+      throw new Error("Password changes are only available for email/password accounts.");
+    }
+    if (newPassword.length < 6) {
+      throw new Error("New password must be at least 6 characters.");
+    }
+
+    const credential = EmailAuthProvider.credential(current.email, currentPassword);
+    await reauthenticateWithCredential(current, credential);
+    await updatePassword(current, newPassword);
+  }, []);
+
   const logOut = useCallback(async () => {
     await signOut(auth);
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, signUp, loginWithGoogle, logOut }),
-    [user, loading, login, signUp, loginWithGoogle, logOut],
+    () => ({
+      user,
+      loading,
+      login,
+      signUp,
+      loginWithGoogle,
+      updateUsername,
+      changePassword,
+      logOut,
+    }),
+    [user, loading, login, signUp, loginWithGoogle, updateUsername, changePassword, logOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

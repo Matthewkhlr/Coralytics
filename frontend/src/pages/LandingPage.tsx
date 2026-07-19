@@ -1,78 +1,96 @@
 import { Link } from "react-router-dom";
-import { HowItWorksSteps } from "@/components/HowItWorksSteps";
-import { OrganismViewport } from "@/components/OrganismViewport";
-import { PageShell } from "@/components/PageShell";
+import { ArrowRight, CloudUpload, FileChartColumn, Search, Share2 } from "lucide-react";
+import { LandingReef } from "@/components/LandingReef";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { LANDING_STEPS } from "@/lib/landingSteps";
-import { SAMPLE_ORGANISM_DATA } from "@/lib/organismData";
+import { useTheme } from "@/contexts/ThemeContext";
+import { hasCachedProfile } from "@/lib/profileCache";
+
+const HOW_IT_WORKS_STEPS = [
+  { title: "Upload Data", icon: CloudUpload },
+  { title: "Deep Analysis", icon: Search },
+  { title: "Review Persona", icon: FileChartColumn },
+  { title: "Export Result", icon: Share2 },
+];
 
 export function LandingPage() {
-  const { user } = useAuth();
-  const signedIn = Boolean(user);
+  const { user, loading } = useAuth();
+  const { theme } = useTheme();
+  // While Firebase auth is still resolving, trust the cached profile so a
+  // signed-in user doesn't see the signed-out hero flash on refresh.
+  const signedIn = Boolean(user) || (loading && hasCachedProfile());
 
   return (
-    <>
-      <PageShell className="flex min-h-[calc(100dvh-4rem)] flex-col py-0">
-        <section className="grid min-h-0 flex-1 grid-cols-1 items-center gap-6 py-8 lg:grid-cols-[1.1fr_1fr] lg:gap-8">
-          <div className="min-w-0">
-            <h1 className="landing-hero-enter text-4xl font-bold leading-[0.95] tracking-tight sm:text-5xl lg:text-6xl xl:text-7xl">
-              {signedIn ? (
-                <>
-                  Watch Your Digital
-                  <br />
-                  <span className="text-primary">Footprint Bloom.</span>
-                </>
-              ) : (
-                <>
-                  Decipher Your
-                  <br />
-                  <span className="text-primary">Online Presence.</span>
-                </>
-              )}
-            </h1>
-            <p className="landing-hero-enter landing-hero-enter--1 mt-3 max-w-xl text-base text-muted-foreground sm:mt-4 sm:text-lg">
-              {signedIn
-                ? "Drop in your latest social exports to directly expand your interactive branches and track your footprint's evolution."
-                : "Convert your raw social media exports into an interactive 3D coral reef that instantly maps out your digital identity."}
-            </p>
+    <section className="relative -mt-[4.75rem] min-h-dvh overflow-hidden">
+      <div className="absolute inset-0 z-0 bg-[#78a4bb] dark:bg-[#00264d]">
+        <LandingReef appearance={theme} />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-background/85 via-background/25 to-transparent" />
+      </div>
+
+      {/* Hero — pinned bottom-left, exhibit style (clicks pass through to orbit) */}
+      <div className="pointer-events-none relative z-10 flex min-h-dvh flex-col justify-end px-5 pb-28 md:px-10">
+        <div className="max-w-md">
+          <h1 className="font-display text-4xl leading-[1.05] text-foreground sm:text-5xl lg:text-6xl">
             {signedIn ? (
-              <div className="landing-hero-enter landing-hero-enter--2 mt-4 flex flex-wrap gap-3 sm:mt-5">
-                <Link
-                  to="/dashboard"
-                  className="inline-flex items-center rounded-full bg-primary px-6 py-3 font-semibold text-primary-foreground transition hover:brightness-110"
-                >
-                  Explore →
-                </Link>
-              </div>
+              <>
+                Watch Your Footprints <span className="text-primary">Bloom</span>
+              </>
             ) : (
-              <Link
-                to="/login"
-                className="landing-hero-enter landing-hero-enter--2 mt-4 inline-flex items-center rounded-full bg-primary px-6 py-3 font-semibold text-primary-foreground transition hover:brightness-110 sm:mt-5"
-              >
-                Get Started →
-              </Link>
+              <>
+                Decipher Your <span className="text-primary">Online Presence</span>
+              </>
             )}
+          </h1>
+          <p className="mt-4 max-w-sm text-sm leading-[1.65] text-muted-foreground">
+            {signedIn
+              ? "Drop in your latest social exports to expand your reef and track how your footprints evolve."
+              : "Turn raw social exports into an interactive coral reef that maps your digital identity."}
+          </p>
+          <div className="mt-8 pointer-events-auto">
+            <Button
+              asChild
+              variant="outline"
+              className="h-auto rounded-none border-foreground/35 bg-accent/10 px-6 py-3 text-[12px] font-medium uppercase tracking-[0.22em] backdrop-blur-md hover:bg-accent/20 hover:border-foreground/60"
+            >
+              <Link to={signedIn ? "/dashboard" : "/login"}>
+                {signedIn ? "Explore" : "Get started"}
+                <ArrowRight />
+              </Link>
+            </Button>
           </div>
-          <div className="landing-hero-enter landing-hero-enter--3 h-[min(36vh,360px)] min-h-[200px] overflow-hidden rounded-2xl border border-border/50 bg-card/40 p-2 lg:h-full lg:max-h-[min(52vh,520px)] lg:min-h-[280px]">
-            <OrganismViewport data={SAMPLE_ORGANISM_DATA} dataSource="sample" appearance="dark" />
-          </div>
-        </section>
-
-        <section className="shrink-0 pb-8 pt-2">
-          <h2 className="landing-hero-enter landing-hero-enter--4 text-center text-xl font-bold tracking-tight md:text-2xl">
-            How It Works
-          </h2>
-          <div className="landing-hero-enter landing-hero-enter--5 mt-3 rounded-3xl border border-border/60 bg-card/50 px-4 py-5 md:mt-4 md:px-8 md:py-6">
-            <HowItWorksSteps steps={LANDING_STEPS} />
-          </div>
-        </section>
-      </PageShell>
-
-      <footer className="border-t border-border/40">
-        <div className="mx-auto max-w-7xl px-6 py-6 text-center text-sm text-muted-foreground">
-          © {new Date().getFullYear()} Coralytics · HEAP 2026
         </div>
-      </footer>
-    </>
+      </div>
+
+      {/* How it works — exhibit-style card, bottom right (matches the
+          "Now observing" species card from design.html). bottom-28 keeps its
+          base flush with the hero CTA button (hero uses pb-28). */}
+      <aside className="pointer-events-none absolute bottom-28 right-10 z-10 hidden w-[280px] border border-foreground/20 bg-background/45 p-[22px] backdrop-blur-[10px] lg:block">
+        <p className="mb-2 flex items-center gap-3 text-caps font-medium text-muted-foreground">
+          <span className="h-px flex-1 bg-foreground/25" aria-hidden />
+          How it works
+          <span className="h-px flex-1 bg-foreground/25" aria-hidden />
+        </p>
+        <ol className="relative">
+          {/* Vertical line connecting the step icons */}
+          <span
+            className="absolute bottom-6 top-6 left-4 w-px -translate-x-1/2 bg-foreground/25"
+            aria-hidden
+          />
+          {HOW_IT_WORKS_STEPS.map(({ title, icon: Icon }) => (
+            <li key={title} className="flex items-center gap-3 py-2">
+              <span className="relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full border border-foreground/20 bg-background/80 backdrop-blur-sm">
+                <Icon className="size-4 text-muted-foreground" />
+              </span>
+              <span className="text-sm leading-[1.65] text-foreground/95">{title}</span>
+            </li>
+          ))}
+        </ol>
+      </aside>
+
+      {/* Bottom credits bar */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-background/70 to-transparent px-5 py-5 text-[11px] uppercase tracking-[0.22em] text-muted-foreground md:px-10">
+        <span>© Coralytics · HEAP 2026</span>
+      </div>
+    </section>
   );
 }
