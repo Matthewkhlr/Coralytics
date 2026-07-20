@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { getAnalysis } from "@/api/client";
 import type { Analysis } from "@/api/types";
 import { DataStatusBanner } from "@/components/DataStatusBanner";
-import { PageDescription, PageHeader, PageShell, PageTitle, SectionTitle } from "@/components/PageShell";
+import { OceanPageFrame, PageDescription, PageHeader, PageTitle, SectionTitle } from "@/components/PageShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
@@ -153,7 +153,7 @@ function ActivityBars({ data }: { data: { month: string; count: number }[] }) {
 
 function GuestInsightsPage() {
   return (
-    <PageShell>
+    <OceanPageFrame animated scenic>
       <PageHeader>
         <PageTitle>What your reef is telling you.</PageTitle>
         <PageDescription>
@@ -173,7 +173,7 @@ function GuestInsightsPage() {
           Login to continue
         </Link>
       </section>
-    </PageShell>
+    </OceanPageFrame>
   );
 }
 
@@ -283,7 +283,7 @@ export function InsightsPage() {
   const isEmpty = !analysis && latestStatus !== "loading";
 
   return (
-    <PageShell>
+    <OceanPageFrame animated scenic>
       {showBanner ? (
         <div className="mb-6">
           <DataStatusBanner status="error" error={error} onRetry={() => withAuth(() => void reload())} />
@@ -705,7 +705,7 @@ export function InsightsPage() {
 
         </div>
       )}
-    </PageShell>
+    </OceanPageFrame>
   );
 }
 
