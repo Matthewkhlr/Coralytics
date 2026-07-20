@@ -5,6 +5,8 @@ type LandingReefProps = {
   appearance?: "light" | "dark";
   /** Calmer, cheaper, non-interactive variant for page backdrops. */
   ambient?: boolean;
+  /** Add decorative coral and whale silhouettes to ambient backdrops. */
+  scenic?: boolean;
   /** Render a static image: warm up briefly, then stop animating. */
   frozen?: boolean;
 };
@@ -19,6 +21,7 @@ type LandingReefProps = {
 export function LandingReef({
   appearance = "dark",
   ambient = false,
+  scenic = false,
   frozen = false,
 }: LandingReefProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -30,7 +33,7 @@ export function LandingReef({
     let cancelled = false;
     let cleanup: (() => void) | null = null;
 
-    createReefScene(host, { isDark: appearance === "dark", ambient, frozen })
+    createReefScene(host, { isDark: appearance === "dark", ambient, scenic, frozen })
       .then((dispose) => {
         if (cancelled) dispose();
         else cleanup = dispose;
@@ -43,7 +46,7 @@ export function LandingReef({
       cancelled = true;
       cleanup?.();
     };
-  }, [appearance, ambient, frozen]);
+  }, [appearance, ambient, scenic, frozen]);
 
   return <div ref={hostRef} className="h-full w-full touch-none" aria-hidden />;
 }
