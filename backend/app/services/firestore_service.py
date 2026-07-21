@@ -3,6 +3,7 @@ Firestore access layer.
 
 DB1 raw uploads: raw_data_service
 DB2 analyses: analysis_store_service
+Normalized posts: posts_service
 
 This module keeps backward-compatible helpers used by the API layer and
 share/privacy features.
@@ -10,12 +11,21 @@ share/privacy features.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from app.firebase import get_firestore_client
 from app.ingestion.schema import post_identity_fingerprint
-from app.services import analysis_store_service, ingestion_service, raw_data_service
+from app.models.persistence import (
+    SCHEMA_VERSION_V2,
+    encode_timestamp,
+    serialize_record_for_api,
+)
+from app.services import (
+    analysis_store_service,
+    ingestion_service,
+    posts_service,
+    raw_data_service,
+)
 
 
 def save_upload_with_posts(
@@ -27,8 +37,9 @@ def save_upload_with_posts(
     ingest_report: dict[str, Any] | None = None,
     raw_files: list[dict[str, Any]] | None = None,
     content_hash: str | None = None,
+    original_bytes: bytes | None = None,
 ) -> dict[str, Any]:
-    """Persist a raw upload in DB1. Parsed posts are preview metadata only."""
+    """Persist a raw upload in DB1 with normalized posts and object storage."""
     if not raw_files:
         raise ValueError("raw_files are required for DB1 storage")
 
@@ -42,7 +53,13 @@ def save_upload_with_posts(
         platform=platform,
         ingest_report=ingest_report,
         content_hash=content_hash,
+        original_bytes=original_bytes,
+        posts=posts,
+        keep_legacy_files=True,
     )
+
+    if upload.get("is_duplicate"):
+        return upload
 
     return raw_data_service.update_raw_upload_metadata(
         user_id,
@@ -52,6 +69,9 @@ def save_upload_with_posts(
         post_count=len(posts),
         comment_count=comment_count,
         content_hash=content_hash,
+        has_normalized_posts=True,
+        schema_version=SCHEMA_VERSION_V2,
+        status="ready",
     )
 
 
@@ -63,16 +83,35 @@ def get_upload_metadata(user_id: str, upload_id: str) -> dict[str, Any]:
     return raw_data_service.get_raw_upload_metadata(user_id, upload_id)
 
 
-def list_uploads(user_id: str) -> list[dict[str, Any]]:
-    return raw_data_service.list_raw_uploads(user_id)
+def list_uploads(
+    user_id: str,
+    *,
+    limit: int | None = None,
+    start_after: str | None = None,
+) -> list[dict[str, Any]]:
+    return raw_data_service.list_raw_uploads(
+        user_id, limit=limit, start_after=start_after
+    )
+
+
+def delete_upload(user_id: str, upload_id: str) -> dict[str, Any]:
+    return raw_data_service.delete_raw_upload(user_id, upload_id)
 
 
 def _parse_upload_posts(user_id: str, upload_id: str) -> list[dict[str, Any]]:
+    """Prefer v2 normalized posts; fall back to reparsing legacy raw files."""
+    metadata = get_upload_metadata(user_id, upload_id)
+
+    if metadata.get("has_normalized_posts") or int(metadata.get("schema_version") or 1) >= 2:
+        if posts_service.has_normalized_posts(user_id, upload_id):
+            page, _ = posts_service.list_normalized_posts(user_id, upload_id)
+            if page:
+                return page
+
     raw_files = raw_data_service.list_raw_files(user_id, upload_id)
     if not raw_files:
         return []
 
-    metadata = get_upload_metadata(user_id, upload_id)
     posts, _ = ingestion_service.ingest_raw_files(raw_files, require_posts=False)
     confirmed = str(metadata.get("platform") or "").lower().strip()
     if confirmed and confirmed not in {"mixed", "sample", "unknown"}:
@@ -85,7 +124,7 @@ def _parse_upload_posts(user_id: str, upload_id: str) -> list[dict[str, Any]]:
 
 
 def update_upload_platform(user_id: str, upload_id: str, platform: str) -> dict[str, Any]:
-    """Persist a user-confirmed platform label for one upload."""
+    """Persist a user-confirmed platform label for one upload and refresh posts."""
     get_upload_metadata(user_id, upload_id)
     raw_files = raw_data_service.list_raw_files(user_id, upload_id)
     if not raw_files:
@@ -100,6 +139,8 @@ def update_upload_platform(user_id: str, upload_id: str, platform: str) -> dict[
     comment_types = {"comment", "reply"}
     comment_count = sum(1 for post in posts if post.get("post_type") in comment_types)
 
+    posts_service.save_normalized_posts(user_id, upload_id, posts)
+
     return raw_data_service.update_raw_upload_metadata(
         user_id,
         upload_id,
@@ -107,6 +148,8 @@ def update_upload_platform(user_id: str, upload_id: str, platform: str) -> dict[
         ingest_report=ingest_report,
         post_count=len(posts),
         comment_count=comment_count,
+        has_normalized_posts=True,
+        schema_version=SCHEMA_VERSION_V2,
     )
 
 
@@ -144,8 +187,21 @@ def list_upload_posts(
     limit: int = 100,
     start_after: str | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """List posts parsed from DB1 raw files for one upload."""
+    """List posts for one upload (normalized posts preferred)."""
     get_upload_metadata(user_id, upload_id)
+
+    metadata = raw_data_service.get_raw_upload_metadata(user_id, upload_id, include_non_ready=True)
+    if metadata.get("has_normalized_posts") or int(metadata.get("schema_version") or 1) >= 2:
+        if posts_service.has_normalized_posts(user_id, upload_id):
+            page, next_cursor = posts_service.list_normalized_posts(
+                user_id,
+                upload_id,
+                limit=limit,
+                start_after=start_after,
+            )
+            merged = _merge_post_insights(page, _latest_post_insights(user_id))
+            return merged, next_cursor
+
     posts = _merge_post_insights(
         _parse_upload_posts(user_id, upload_id),
         _latest_post_insights(user_id),
@@ -175,8 +231,20 @@ def get_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
     return analysis_store_service.get_analysis(user_id, analysis_id)
 
 
-def list_analyses(user_id: str, *, hydrate: bool = True) -> list[dict[str, Any]]:
-    return analysis_store_service.list_analyses(user_id, hydrate=hydrate)
+def list_analyses(
+    user_id: str,
+    *,
+    hydrate: bool = True,
+    limit: int | None = None,
+    start_after: str | None = None,
+) -> list[dict[str, Any]]:
+    return analysis_store_service.list_analyses(
+        user_id, hydrate=hydrate, limit=limit, start_after=start_after
+    )
+
+
+def delete_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
+    return analysis_store_service.delete_analysis(user_id, analysis_id)
 
 
 def _dedupe_posts_by_id(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -205,7 +273,7 @@ def list_user_posts(
     *,
     upload_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Parse raw exports for a user, optionally scoped to upload_ids, deduped by post id."""
+    """Load posts for a user (v2 normalized preferred, legacy fallback)."""
     uploads = list_uploads(user_id)
     if upload_ids:
         allowed = set(upload_ids)
@@ -220,7 +288,7 @@ def list_user_posts(
 
 
 def list_all_user_posts(user_id: str) -> list[dict[str, Any]]:
-    """Parse every raw export file in DB1 for a user (deduped by post id)."""
+    """Load every post for a user (deduped by post id)."""
     return list_user_posts(user_id)
 
 
@@ -276,18 +344,21 @@ def get_privacy_settings(user_id: str) -> dict[str, Any]:
     if not snapshot.exists:
         return defaults
     data = snapshot.to_dict() or {}
-    return {**defaults, **data}
+    return serialize_record_for_api({**defaults, **data})
 
 
 def save_privacy_settings(user_id: str, settings: dict[str, Any]) -> dict[str, Any]:
-    now = datetime.now(timezone.utc).isoformat()
-    record = {**settings, "updated_at": now}
+    now = encode_timestamp()
+    record = {**settings, "updated_at": now, "schema_version": SCHEMA_VERSION_V2}
     _user_doc(user_id).collection("settings").document("privacy").set(record, merge=True)
-    return record
+    return serialize_record_for_api(record)
 
 
 def save_evolution_snapshot(user_id: str, analysis_id: str, snapshot: dict[str, Any]) -> None:
-    _user_doc(user_id).collection("evolution_snapshots").document(analysis_id).set(snapshot)
+    record = {**snapshot, "schema_version": SCHEMA_VERSION_V2}
+    if not record.get("created_at"):
+        record["created_at"] = encode_timestamp()
+    _user_doc(user_id).collection("evolution_snapshots").document(analysis_id).set(record)
 
 
 def list_evolution_snapshots(user_id: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -298,7 +369,7 @@ def list_evolution_snapshots(user_id: str, limit: int = 20) -> list[dict[str, An
         .limit(limit)
         .stream()
     )
-    return [doc.to_dict() for doc in snapshots if doc.exists]
+    return [serialize_record_for_api(doc.to_dict() or {}) for doc in snapshots if doc.exists]
 
 
 def create_share(
@@ -306,22 +377,28 @@ def create_share(
     analysis_id: str,
     payload: dict[str, Any],
     *,
-    expires_at: str,
+    expires_at,
 ) -> dict[str, Any]:
     import uuid
 
+    from app.models.persistence import parse_timestamp
+
     token = uuid.uuid4().hex
-    now = datetime.now(timezone.utc).isoformat()
+    now = encode_timestamp()
+    expiry = parse_timestamp(expires_at) or encode_timestamp()
     record: dict[str, Any] = {
         "token": token,
         "user_id": user_id,
         "analysis_id": analysis_id,
         "created_at": now,
-        "expires_at": expires_at,
+        "expires_at": expiry,
+        "expire_at": expiry,  # Firestore TTL field override target
+        "revoked": False,
+        "schema_version": SCHEMA_VERSION_V2,
         "payload": payload,
     }
     _shares_collection().document(token).set(record)
-    return record
+    return serialize_record_for_api(record)
 
 
 def get_share(token: str) -> dict[str, Any]:
@@ -330,4 +407,46 @@ def get_share(token: str) -> dict[str, Any]:
         raise KeyError(f"Share not found: {token}")
     data = snapshot.to_dict()
     assert data is not None
-    return data
+    return serialize_record_for_api(data)
+
+
+def revoke_share(token: str, *, user_id: str) -> dict[str, Any]:
+    snapshot = _shares_collection().document(token).get()
+    if not snapshot.exists:
+        raise KeyError(f"Share not found: {token}")
+    data = snapshot.to_dict() or {}
+    if data.get("user_id") != user_id:
+        raise PermissionError("Cannot revoke a share you do not own")
+    now = encode_timestamp()
+    snapshot.reference.set(
+        {"revoked": True, "revoked_at": now, "updated_at": now},
+        merge=True,
+    )
+    data.update({"revoked": True, "revoked_at": now})
+    return serialize_record_for_api(data)
+
+
+def delete_share(token: str, *, user_id: str) -> dict[str, Any]:
+    snapshot = _shares_collection().document(token).get()
+    if not snapshot.exists:
+        return {"deleted": False, "token": token}
+    data = snapshot.to_dict() or {}
+    if data.get("user_id") != user_id:
+        raise PermissionError("Cannot delete a share you do not own")
+    snapshot.reference.delete()
+    return {"deleted": True, "token": token}
+
+
+def list_user_shares(user_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+    # Simple scan filtered in memory; share volume per user is expected to be small.
+    rows: list[dict[str, Any]] = []
+    for snap in _shares_collection().stream():
+        if not snap.exists:
+            continue
+        data = snap.to_dict() or {}
+        if data.get("user_id") != user_id:
+            continue
+        rows.append(serialize_record_for_api(data))
+        if len(rows) >= limit:
+            break
+    return rows

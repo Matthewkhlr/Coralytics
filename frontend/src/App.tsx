@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AppShell } from "./components/AppShell";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { LandingPage } from "./pages/LandingPage";
 import { UploadPage } from "./pages/UploadPage";
@@ -22,9 +23,11 @@ export function App() {
 
               <Route element={<AppShell />}>
                 <Route path="/" element={<LandingPage />} />
-                <Route path="/upload" element={<UploadPage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/insights" element={<InsightsPage />} />
+                <Route element={<ProtectedRoute />}>
+                  <Route path="/upload" element={<UploadPage />} />
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/insights" element={<InsightsPage />} />
+                </Route>
               </Route>
 
               {/* Legacy redirects */}

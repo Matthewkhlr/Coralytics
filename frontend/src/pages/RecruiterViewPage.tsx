@@ -54,10 +54,7 @@ export function RecruiterViewPage() {
       <div className="max-w-7xl mx-auto px-6 py-10">
         <header className="mb-8">
           <Link to="/" className="flex items-center gap-2.5 mb-6 w-fit">
-            <span
-              className="w-8 h-8 rounded-md border border-dashed border-border/60 bg-card/40"
-              aria-label="Logo placeholder"
-            />
+            <img src="/favicon.ico" alt="Coralytics logo" className="w-8 h-8" />
             <span className="text-lg font-bold tracking-tight text-white">
               Coralytics
             </span>

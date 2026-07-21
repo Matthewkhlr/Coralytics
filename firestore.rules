@@ -2,30 +2,77 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Public username registry for unique handles + login lookup.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Username registry is backend-owned (Admin SDK).
+    // Clients must not read emails or claim/release usernames directly.
     match /usernames/{username} {
-      allow get: if true;
-      allow list: if false;
-      allow create: if request.auth != null
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasAll(['uid', 'email', 'username'])
-        && request.resource.data.username == username
-        && !exists(/databases/$(database)/documents/usernames/$(username));
-      allow update, delete: if false;
+      allow read, write: if false;
     }
 
-    // User-scoped data, including nested upload posts.
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Public read-only share links (written by backend Admin SDK only).
-    match /shares/{token} {
-      allow read: if true;
+    // User profile root: owners may read their own profile document only.
+    match /users/{userId} {
+      allow read: if isOwner(userId);
       allow write: if false;
+
+      // Backend-owned collections — clients may read ready data, never write.
+      match /raw_uploads/{uploadId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+
+        match /{document=**} {
+          allow read: if isOwner(userId);
+          allow write: if false;
+        }
+      }
+
+      match /analyses/{analysisId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+
+        match /{document=**} {
+          allow read: if isOwner(userId);
+          allow write: if false;
+        }
+      }
+
+      match /settings/{docId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      match /evolution_snapshots/{snapshotId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      match /content_hashes/{hashId} {
+        allow read, write: if false;
+      }
+
+      // Deny any other nested paths by default.
+      match /{document=**} {
+        allow read, write: if false;
+      }
     }
 
-    // Deny everything else. The FastAPI backend uses the Admin SDK and bypasses these rules.
+    // Share documents are backend-owned. Public access goes through FastAPI
+    // so expiry and privacy filters cannot be bypassed.
+    match /shares/{token} {
+      allow read, write: if false;
+    }
+
+    // Migration checkpoints are admin/backend only.
+    match /migrations/{docId} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -24,15 +24,12 @@ const links = [
 
 function BrandMark({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        "flex size-8 items-center justify-center rounded-full border border-foreground/40 font-display text-[17px] font-semibold text-foreground/95",
-        className,
-      )}
+    <img
+      src="/favicon.ico"
+      alt=""
+      className={cn("size-10 shrink-0", className)}
       aria-hidden
-    >
-      C
-    </span>
+    />
   );
 }
 

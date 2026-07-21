@@ -7,16 +7,27 @@ Analysis results are stored under:
 Large `post_insights` (and `organism_data.posts`) payloads are split into
 subcollection chunks so the main analysis document stays under Firestore's
 1 MiB limit.
+
+Writes use pending → ready lifecycle so partial failures are hidden.
 """
 
 from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from app.firebase import get_firestore_client
+from app.models.persistence import (
+    RECORD_STATUS_FAILED,
+    RECORD_STATUS_PENDING,
+    RECORD_STATUS_READY,
+    SCHEMA_VERSION_V2,
+    encode_timestamp,
+    is_ready,
+    serialize_record_for_api,
+    with_v2_metadata,
+)
 
 # Leave headroom under Firestore's 1,048,576-byte document cap.
 _FIRESTORE_SAFE_DOC_BYTES = 900_000
@@ -88,7 +99,6 @@ def _truncate_oversized_fields(record: dict[str, Any]) -> None:
     if isinstance(red_flags, dict) and isinstance(red_flags.get("flags"), list):
         flags = red_flags["flags"]
         while flags and _utf8_size(record) > _FIRESTORE_SAFE_DOC_BYTES:
-            # Drop half the examples each pass; keep summary counts if present.
             flags[:] = flags[: max(1, len(flags) // 2)]
             if len(flags) == 1 and _utf8_size(record) > _FIRESTORE_SAFE_DOC_BYTES:
                 flags.clear()
@@ -96,7 +106,6 @@ def _truncate_oversized_fields(record: dict[str, Any]) -> None:
 
     timeline = record.get("sentiment_timeline")
     if isinstance(timeline, list) and _utf8_size(record) > _FIRESTORE_SAFE_DOC_BYTES:
-        # Keep a coarse weekly-ish sample if daily points blow the budget.
         if len(timeline) > 90:
             record["sentiment_timeline"] = timeline[:: max(1, len(timeline) // 90)]
         if _utf8_size(record) > _FIRESTORE_SAFE_DOC_BYTES:
@@ -121,7 +130,6 @@ def _write_insight_chunks(user_id: str, analysis_id: str, insights: list[dict[st
             size = max(_MIN_INSIGHT_CHUNK_SIZE, size // 2)
 
         chunk = insights[index : index + size]
-        # Last-resort: drop content excerpts until the min-sized chunk fits.
         while (
             size == _MIN_INSIGHT_CHUNK_SIZE
             and _utf8_size({"index": written, "items": chunk}) > _FIRESTORE_SAFE_DOC_BYTES
@@ -148,6 +156,24 @@ def _write_insight_chunks(user_id: str, analysis_id: str, insights: list[dict[st
     if ops:
         batch.commit()
     return written
+
+
+def _delete_insight_chunks(user_id: str, analysis_id: str) -> int:
+    col = _insight_chunks_collection(user_id, analysis_id)
+    deleted = 0
+    batch = get_firestore_client().batch()
+    ops = 0
+    for snap in col.stream():
+        batch.delete(snap.reference)
+        deleted += 1
+        ops += 1
+        if ops >= 400:
+            batch.commit()
+            batch = get_firestore_client().batch()
+            ops = 0
+    if ops:
+        batch.commit()
+    return deleted
 
 
 def _load_insight_chunks(user_id: str, analysis_id: str) -> list[dict[str, Any]]:
@@ -188,9 +214,9 @@ def save_analysis(
     analysis: dict[str, Any],
     upload_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Persist an analysis result in DB2."""
+    """Persist an analysis result in DB2 with pending→ready lifecycle."""
     analysis_id = uuid.uuid4().hex
-    now = datetime.now(timezone.utc).isoformat()
+    now = encode_timestamp()
 
     insights = compact_post_insights(list(analysis.get("post_insights") or []))
     payload = {key: value for key, value in analysis.items() if key != "post_insights"}
@@ -201,49 +227,66 @@ def save_analysis(
         else _organism_posts_from_insights(insights)
     )
 
-    record: dict[str, Any] = {
-        "analysis_id": analysis_id,
-        "user_id": user_id,
-        "created_at": now,
-        "updated_at": now,
-        "upload_ids": upload_ids or [],
-        "storage_layer": "db2",
-        **payload,
-        "post_insights": insights,
-        "post_insights_chunked": False,
-        "post_insights_count": len(insights),
-    }
+    record: dict[str, Any] = with_v2_metadata(
+        {
+            "analysis_id": analysis_id,
+            "user_id": user_id,
+            "created_at": now,
+            "updated_at": now,
+            "upload_ids": upload_ids or [],
+            "storage_layer": "db2",
+            **payload,
+            "post_insights": insights,
+            "post_insights_chunked": False,
+            "post_insights_count": len(insights),
+        },
+        status=RECORD_STATUS_PENDING,
+        now=now,
+    )
 
     doc_ref = _analyses_collection(user_id).document(analysis_id)
 
-    if _utf8_size(record) <= _FIRESTORE_SAFE_DOC_BYTES:
+    try:
+        if _utf8_size(record) <= _FIRESTORE_SAFE_DOC_BYTES:
+            record["status"] = RECORD_STATUS_READY
+            doc_ref.set(record)
+            return serialize_record_for_api(record)
+
+        record["post_insights"] = []
+        record["post_insights_chunked"] = True
+        record["organism_data"] = _slim_organism_data(organism)
+        _truncate_oversized_fields(record)
+
+        if _utf8_size(record) > _FIRESTORE_SAFE_DOC_BYTES:
+            raise ValueError(
+                "Analysis metadata exceeds Firestore maximum entity size even after chunking "
+                "post insights. Try a smaller batch of posts/comments files."
+            )
+
+        # Write chunks first, then finalize the parent as ready.
         doc_ref.set(record)
-        return record
+        _write_insight_chunks(user_id, analysis_id, insights)
+        record["status"] = RECORD_STATUS_READY
+        record["updated_at"] = encode_timestamp()
+        doc_ref.set({"status": RECORD_STATUS_READY, "updated_at": record["updated_at"]}, merge=True)
 
-    # Document would exceed Firestore's 1 MiB limit — strip bulky arrays and chunk insights.
-    # organism_data.posts duplicates post_insights and was previously left on the main doc,
-    # which still blew past the limit for large exports.
-    record["post_insights"] = []
-    record["post_insights_chunked"] = True
-    record["organism_data"] = _slim_organism_data(organism)
-    _truncate_oversized_fields(record)
-
-    if _utf8_size(record) > _FIRESTORE_SAFE_DOC_BYTES:
-        raise ValueError(
-            "Analysis metadata exceeds Firestore maximum entity size even after chunking "
-            "post insights. Try a smaller batch of posts/comments files."
+        record["post_insights"] = insights
+        record["organism_data"] = {
+            **record["organism_data"],
+            "posts": organism_posts or _organism_posts_from_insights(insights),
+        }
+        return serialize_record_for_api(record)
+    except Exception as exc:
+        doc_ref.set(
+            {
+                "status": RECORD_STATUS_FAILED,
+                "error": str(exc),
+                "updated_at": encode_timestamp(),
+                "schema_version": SCHEMA_VERSION_V2,
+            },
+            merge=True,
         )
-
-    doc_ref.set(record)
-    _write_insight_chunks(user_id, analysis_id, insights)
-
-    # Return the full insights / organism posts to the API caller.
-    record["post_insights"] = insights
-    record["organism_data"] = {
-        **record["organism_data"],
-        "posts": organism_posts or _organism_posts_from_insights(insights),
-    }
-    return record
+        raise
 
 
 def get_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
@@ -255,24 +298,68 @@ def get_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
 
     data = snapshot.to_dict()
     assert data is not None
-    return _hydrate_post_insights(user_id, data)
+    if not is_ready(data):
+        raise KeyError(f"Analysis not found: {analysis_id}")
+    return serialize_record_for_api(_hydrate_post_insights(user_id, data))
 
 
-def list_analyses(user_id: str, *, hydrate: bool = True) -> list[dict[str, Any]]:
-    snapshots = (
-        _analyses_collection(user_id)
-        .order_by("created_at", direction="DESCENDING")
-        .stream()
-    )
-    analyses = [doc.to_dict() for doc in snapshots if doc.exists]
-    if not hydrate:
-        return [analysis for analysis in analyses if analysis]
-    return [_hydrate_post_insights(user_id, analysis) for analysis in analyses if analysis]
+def list_analyses(
+    user_id: str,
+    *,
+    hydrate: bool = True,
+    limit: int | None = None,
+    start_after: str | None = None,
+) -> list[dict[str, Any]]:
+    query = _analyses_collection(user_id).order_by("created_at", direction="DESCENDING")
+    if start_after:
+        cursor = _analyses_collection(user_id).document(start_after).get()
+        if cursor.exists:
+            query = query.start_after(cursor)
+
+    fetch_limit = None if limit is None else limit * 3
+    if fetch_limit is not None:
+        query = query.limit(fetch_limit)
+
+    analyses: list[dict[str, Any]] = []
+    for doc in query.stream():
+        if not doc.exists:
+            continue
+        data = doc.to_dict() or {}
+        if not is_ready(data):
+            continue
+        if hydrate:
+            analyses.append(serialize_record_for_api(_hydrate_post_insights(user_id, data)))
+        else:
+            analyses.append(serialize_record_for_api(data))
+        if limit is not None and len(analyses) >= limit:
+            break
+    return analyses
 
 
 def get_latest_analysis(user_id: str) -> dict[str, Any] | None:
-    analyses = list_analyses(user_id, hydrate=False)
+    analyses = list_analyses(user_id, hydrate=False, limit=1)
     if not analyses:
         return None
     latest = analyses[0]
-    return _hydrate_post_insights(user_id, latest)
+    return serialize_record_for_api(_hydrate_post_insights(user_id, latest))
+
+
+def delete_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
+    doc_ref = _analyses_collection(user_id).document(analysis_id)
+    snapshot = doc_ref.get()
+    if not snapshot.exists:
+        return {"deleted": False, "analysis_id": analysis_id}
+
+    _delete_insight_chunks(user_id, analysis_id)
+
+    # Remove matching evolution snapshot if present.
+    evo_ref = (
+        get_firestore_client()
+        .collection("users")
+        .document(user_id)
+        .collection("evolution_snapshots")
+        .document(analysis_id)
+    )
+    evo_ref.delete()
+    doc_ref.delete()
+    return {"deleted": True, "analysis_id": analysis_id}

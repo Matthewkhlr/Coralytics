@@ -3,9 +3,8 @@ import { Link } from "react-router-dom";
 import { getAnalysis } from "@/api/client";
 import type { Analysis } from "@/api/types";
 import { DataStatusBanner } from "@/components/DataStatusBanner";
-import { PageDescription, PageHeader, PageShell, PageTitle, SectionTitle } from "@/components/PageShell";
+import { OceanPageFrame, PageDescription, PageHeader, PageTitle, SectionTitle } from "@/components/PageShell";
 import { useAuth } from "@/contexts/AuthContext";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
 import { useLatestAnalysis } from "@/hooks/useLatestAnalysis";
 import { formatPlatform, formatRunLabel, formatShortDate } from "@/lib/format";
@@ -151,35 +150,8 @@ function ActivityBars({ data }: { data: { month: string; count: number }[] }) {
   );
 }
 
-function GuestInsightsPage() {
-  return (
-    <PageShell>
-      <PageHeader>
-        <PageTitle>What your reef is telling you.</PageTitle>
-        <PageDescription>
-          After you save a run, Insights surfaces persona summary, topics, sentiment, red flags, and
-          branding next steps.
-        </PageDescription>
-      </PageHeader>
-      <section className="rounded-2xl border border-primary/40 bg-gradient-to-br from-primary/10 to-transparent p-8">
-        <SectionTitle>Login to unlock insights</SectionTitle>
-        <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
-          <li>· Plain-English persona read</li>
-          <li>· Topic and platform breakdowns</li>
-          <li>· Sentiment timeline and red-flag detection</li>
-          <li>· Personal branding recommendations</li>
-        </ul>
-        <Link to="/login" className="mt-6 inline-flex px-5 py-2.5 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition">
-          Login to continue
-        </Link>
-      </section>
-    </PageShell>
-  );
-}
-
 export function InsightsPage() {
   const { user } = useAuth();
-  const { isGuest, withAuth } = useRequireAuth();
   const history = useAnalysisHistory(user?.uid);
   const { status: latestStatus, analysis: latestAnalysis, error, reload } = useLatestAnalysis(user?.uid);
 
@@ -215,10 +187,6 @@ export function InsightsPage() {
 
   const analysis = selectedAnalysis ?? latestAnalysis;
   const { data: organismData } = resolveOrganismData(analysis?.organism_data);
-
-  if (isGuest) {
-    return <GuestInsightsPage />;
-  }
 
   const isLoading = latestStatus === "loading" && !analysis;
   const showBanner = latestStatus === "error" && !analysis;
@@ -283,10 +251,10 @@ export function InsightsPage() {
   const isEmpty = !analysis && latestStatus !== "loading";
 
   return (
-    <PageShell>
+    <OceanPageFrame>
       {showBanner ? (
         <div className="mb-6">
-          <DataStatusBanner status="error" error={error} onRetry={() => withAuth(() => void reload())} />
+          <DataStatusBanner status="error" error={error} onRetry={() => void reload()} />
         </div>
       ) : null}
 
@@ -705,7 +673,7 @@ export function InsightsPage() {
 
         </div>
       )}
-    </PageShell>
+    </OceanPageFrame>
   );
 }
 

@@ -8,9 +8,8 @@ import {
   OrganismViewport,
   type OrganismViewportHandle,
 } from "@/components/OrganismViewport";
-import { PageHeader, PageShell, PageTitle, PageDescription, SectionTitle } from "@/components/PageShell";
+import { OceanPageFrame, PageHeader, PageTitle, PageDescription, SectionTitle } from "@/components/PageShell";
 import { useAuth } from "@/contexts/AuthContext";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useLatestAnalysis } from "@/hooks/useLatestAnalysis";
 import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
 import { useUploads } from "@/hooks/useUploads";
@@ -20,7 +19,6 @@ import {
   formatSentiment,
   organismDataForPlatform,
   resolveOrganismData,
-  SAMPLE_ORGANISM_DATA,
 } from "@/lib/organismData";
 import { cn } from "@/lib/utils";
 
@@ -36,56 +34,8 @@ function downloadDataUrl(dataUrl: string, filename: string) {
   link.click();
 }
 
-function GuestDashboardPage() {
-  return (
-    <PageShell>
-      <PageHeader>
-        <PageTitle>Explore Your Reef</PageTitle>
-        <PageDescription>
-          Preview a sample coral below. Login to load your own runs, inspect branches, and share a
-          link.
-        </PageDescription>
-        <Link
-          to="/login"
-          className="mt-4 inline-flex px-5 py-2.5 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition"
-        >
-          Login to see your coral →
-        </Link>
-      </PageHeader>
-
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 lg:col-span-8">
-          <div className="rounded-2xl overflow-hidden border border-border/50 bg-card/40 h-[620px] p-2">
-            <OrganismViewport
-              data={SAMPLE_ORGANISM_DATA}
-              dataSource="sample"
-              appearance="dark"
-            />
-          </div>
-          <p className="mt-3 text-center text-xs text-muted-foreground">Sample reef · not your data</p>
-        </div>
-        <aside className="col-span-12 lg:col-span-4 rounded-2xl border border-border/60 bg-card p-6 flex flex-col justify-center">
-          <SectionTitle>What you unlock</SectionTitle>
-          <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
-            <li>· Your latest run’s 3D coral</li>
-            <li>· Click branches to inspect real posts</li>
-            <li>· Screenshot and shareable recruiter links</li>
-          </ul>
-          <Link
-            to="/login"
-            className="mt-6 inline-flex justify-center px-5 py-2.5 rounded-full border border-border text-sm font-semibold hover:bg-background/60 transition"
-          >
-            Login
-          </Link>
-        </aside>
-      </div>
-    </PageShell>
-  );
-}
-
 export function DashboardPage() {
   const { user } = useAuth();
-  const { isGuest, withAuth } = useRequireAuth();
   const location = useLocation();
   const navState = (location.state || {}) as DashboardNavState;
   const viewportRef = useRef<OrganismViewportHandle>(null);
@@ -164,7 +114,7 @@ export function DashboardPage() {
   );
   const organismSource = baseOrganism.source;
 
-  const showBanner = !isGuest && (status === "loading" || status === "error");
+  const showBanner = status === "loading" || status === "error";
   const topics = organismData.topics;
   const selectedMeta = topics.find((t) => t.name === selectedTopic) ?? null;
   const runCount = history.analyses.length;
@@ -229,15 +179,9 @@ export function DashboardPage() {
     setBranchError(null);
   }, [platformFilter, selectedAnalysisId]);
 
-  if (isGuest) {
-    return <GuestDashboardPage />;
-  }
-
   const handleExportPng = () => {
-    withAuth(() => {
-      const dataUrl = viewportRef.current?.exportPng();
-      if (dataUrl) downloadDataUrl(dataUrl, "coralytics-coral.png");
-    });
+    const dataUrl = viewportRef.current?.exportPng();
+    if (dataUrl) downloadDataUrl(dataUrl, "coralytics-coral.png");
   };
 
   const handleCreateShare = async () => {
@@ -260,13 +204,13 @@ export function DashboardPage() {
   };
 
   return (
-    <PageShell>
+    <OceanPageFrame>
       {showBanner ? (
         <div className="mb-6">
           <DataStatusBanner
             status={status === "loading" ? "loading" : "error"}
             error={error}
-            onRetry={() => withAuth(() => void reload())}
+            onRetry={() => void reload()}
           />
         </div>
       ) : null}
@@ -285,7 +229,7 @@ export function DashboardPage() {
           <button
             type="button"
             disabled={sharing || !analysis}
-            onClick={() => withAuth(() => void handleCreateShare())}
+            onClick={() => void handleCreateShare()}
             className="px-4 py-2 rounded-full border border-border text-sm hover:bg-card transition disabled:opacity-50"
           >
             {sharing ? "Creating…" : "Share link"}
@@ -476,7 +420,7 @@ export function DashboardPage() {
           )}
         </aside>
       </div>
-    </PageShell>
+    </OceanPageFrame>
   );
 }
 

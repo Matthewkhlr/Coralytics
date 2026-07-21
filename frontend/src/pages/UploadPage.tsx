@@ -13,7 +13,6 @@ import { Check, FilePlus2, GripVertical, Info, LoaderCircle, Trash2 } from "luci
 import { ApiError, analyzeUploads, updateUploadPlatform, uploadExport } from "@/api/client";
 import type { Analysis, Upload } from "@/api/types";
 import { useAuth } from "@/contexts/AuthContext";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
 import { useUploads } from "@/hooks/useUploads";
 import { OceanPageFrame, PageHeader, PageTitle, SectionTitle } from "@/components/PageShell";
@@ -242,38 +241,6 @@ function UploadPageHeader() {
 // The upload flow sits on the shared OceanPageFrame — the same static
 // ambient reef backdrop used by the dashboard and insights pages.
 const UploadPageFrame = OceanPageFrame;
-
-function GuestUploadPage() {
-  return (
-    <UploadPageFrame>
-      <UploadPageHeader />
-      <section className="max-w-2xl border-l-2 border-primary/50 pl-6 py-1">
-        <SectionTitle>Login to build a run</SectionTitle>
-        <p className="mt-2 text-base leading-relaxed text-muted-foreground sm:text-lg">
-          Signed-in users can upload Instagram, LinkedIn, and Reddit exports, grow their coral, and
-          track how each run changes the reef.
-        </p>
-        <ol className="mt-5 space-y-2 text-sm text-muted-foreground">
-          <li className="flex gap-3">
-            <span className="font-semibold text-accent">1</span>
-            Upload raw exports — we parse and save them to your library
-          </li>
-          <li className="flex gap-3">
-            <span className="font-semibold text-accent">2</span>
-            Confirm each file&apos;s source (Instagram, LinkedIn, or Reddit)
-          </li>
-          <li className="flex gap-3">
-            <span className="font-semibold text-accent">3</span>
-            Run analysis to grow your coral on the dashboard
-          </li>
-        </ol>
-        <Button asChild variant="outline" className={cn(LANDING_BUTTON, "mt-6")}>
-          <Link to="/login">Login to continue →</Link>
-        </Button>
-      </section>
-    </UploadPageFrame>
-  );
-}
 
 function isKnownPlatform(platform: string): platform is SocialPlatform {
   return PLATFORMS.some((p) => p.key === platform);
@@ -555,7 +522,6 @@ function SourceSortBoard({
 
 export function UploadPage() {
   const { user } = useAuth();
-  const { isGuest, withAuth, loading: authLoading } = useRequireAuth();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const idPrefix = useId();
@@ -635,18 +601,6 @@ export function UploadPage() {
       ),
     [reviewUploads, unsupportedDraft, knownUploads],
   );
-
-  if (authLoading) {
-    return (
-      <UploadPageFrame>
-        <UploadPageHeader />
-      </UploadPageFrame>
-    );
-  }
-
-  if (isGuest) {
-    return <GuestUploadPage />;
-  }
 
   const changeUploadPlatform = async (uploadId: string, platform: SocialPlatform) => {
     if (!user) return;
@@ -900,7 +854,7 @@ export function UploadPage() {
                         variant="outline"
                         className={LANDING_BUTTON}
                         disabled={saving || hasUnsupportedFiles}
-                        onClick={() => withAuth(() => handleIngest())}
+                        onClick={() => void handleIngest()}
                       >
                         Ingest
                       </Button>
@@ -934,7 +888,7 @@ export function UploadPage() {
                     variant="outline"
                     className={LANDING_BUTTON}
                     disabled={saving || hasUnsupportedFiles || !hasSupportedUploads}
-                    onClick={() => withAuth(() => continueToSourcesStep())}
+                    onClick={() => continueToSourcesStep()}
                   >
                     Continue
                   </Button>
@@ -1021,7 +975,7 @@ export function UploadPage() {
                 variant="outline"
                 className={LANDING_BUTTON}
                 disabled={saving || !hasIngested || draft.length > 0 || totalReviewPosts === 0}
-                onClick={() => withAuth(() => void confirmGrow())}
+                onClick={() => void confirmGrow()}
               >
                 Upload
               </Button>

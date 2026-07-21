@@ -169,3 +169,17 @@ export function createShare(request: CreateShareRequest) {
 export function getShare(token: string) {
   return apiFetch<ShareRecord>(`/shares/${encodeURIComponent(token)}`);
 }
+
+export function revokeShare(token: string) {
+  return apiFetch<{ token: string; revoked: boolean }>(
+    `/shares/${encodeURIComponent(token)}/revoke`,
+    { method: "POST" },
+  );
+}
+
+export function deleteUpload(userId: string, uploadId: string) {
+  return apiFetch<{ deleted: boolean; upload_id: string }>(
+    `/uploads/${encodeURIComponent(userId)}/${encodeURIComponent(uploadId)}`,
+    { method: "DELETE" },
+  );
+}

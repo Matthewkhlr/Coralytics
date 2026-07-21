@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,7 @@ def seed_sample_data(
 ) -> dict[str, Any]:
     """Ingest bundled sample exports into DB1 and optionally run NLP analysis to DB2."""
     zip_bytes = build_sample_data_zip(sample_dir)
+    content_hash = sha256(zip_bytes).hexdigest()
     raw_files, extract_warnings = ingestion_service.extract_raw_upload(zip_bytes, SAMPLE_ZIP_NAME)
     posts, ingest_report = ingestion_service.ingest_raw_files(raw_files)
     if extract_warnings:
@@ -50,6 +52,8 @@ def seed_sample_data(
         platform=platform,
         ingest_report=ingest_report,
         raw_files=raw_files,
+        content_hash=content_hash,
+        original_bytes=zip_bytes,
     )
 
     result: dict[str, Any] = {
