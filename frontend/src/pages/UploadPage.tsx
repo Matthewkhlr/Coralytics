@@ -1,6 +1,8 @@
 import {
   useCallback,
+  useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,20 +13,19 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import { Check, FilePlus2, GripVertical, Info, LoaderCircle, Trash2 } from "lucide-react";
 import { ApiError, analyzeUploads, updateUploadPlatform, uploadExport } from "@/api/client";
-import type { Analysis, Upload } from "@/api/types";
+import type { Upload } from "@/api/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
 import { useUploads } from "@/hooks/useUploads";
 import { OceanPageFrame, PageHeader, PageTitle, SectionTitle } from "@/components/PageShell";
+import { MyRunsPanel } from "@/components/MyRunsPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { cacheAnalysis, invalidateAnalysisCache } from "@/lib/analysisCache";
-import { formatPlatform, formatRunLabel, formatShortDate } from "@/lib/format";
+import { LANDING_BUTTON } from "@/lib/buttonStyles";
+import { formatPlatform } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const PLATFORMS = [
@@ -87,17 +88,6 @@ function isAlreadySaved(hash: string, uploads: Upload[]) {
   return uploads.some((upload) => upload.content_hash === hash);
 }
 
-function platformsLabel(analysis: Analysis) {
-  const platforms = analysis.platform_breakdown?.map((p) => formatPlatform(p.platform)) ?? [];
-  if (!platforms.length) return "All uploads";
-  return platforms.join(" + ");
-}
-
-function topicCount(analysis: Analysis) {
-  return analysis.topics?.length ?? analysis.organism_data?.topics?.length ?? 0;
-}
-
-/** Matches backend `_default_run_name` — MM/DD/YYYY_HH:MM (local). */
 function defaultRunName(when = new Date()) {
   const mm = String(when.getMonth() + 1).padStart(2, "0");
   const dd = String(when.getDate()).padStart(2, "0");
@@ -117,9 +107,32 @@ const UPLOAD_STEP_TONES = {
 const UPLOAD_FILE_HELP =
   "Supported sources: Instagram, LinkedIn, Reddit.\nSupported formats: .zip, .json, .csv, .txt.";
 
-/** Matches the landing page "Get started" button (use with variant="outline"). */
-const LANDING_BUTTON =
-  "h-auto rounded-none border-foreground/35 bg-accent/10 px-6 py-3 text-[12px] font-medium uppercase tracking-[0.22em] backdrop-blur-md hover:bg-accent/20 hover:border-foreground/60";
+/** Fallback until the upload flow baseline height is measured. */
+const RUNS_PANEL_FALLBACK_PX = 640;
+const RUNS_PANEL_HEIGHT_KEY = "coralytics:uploadRunsPanelHeight";
+
+function readStoredRunsPanelHeight(): number | null {
+  try {
+    const raw = sessionStorage.getItem(RUNS_PANEL_HEIGHT_KEY);
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function shouldCalibrateRunsPanelHeight(
+  activeStep: number,
+  uploadOpen: boolean,
+  draftLength: number,
+) {
+  // Step 1 default (dropzone only): full stack through View Your Coral.
+  if (activeStep === 1 && uploadOpen && draftLength === 0) return true;
+  // Step 4 default: recalibrate if needed.
+  if (activeStep === 4) return true;
+  return false;
+}
 
 function StepHelp({ text, ariaLabel = "More information" }: { text: string; ariaLabel?: string }) {
   const [open, setOpen] = useState(false);
@@ -540,6 +553,11 @@ export function UploadPage() {
   const [uploadOpen, setUploadOpen] = useState(true);
   const [completedAnalysisId, setCompletedAnalysisId] = useState<string | null>(null);
   const uploadDraftSnapshotRef = useRef<DraftFile[]>([]);
+  const uploadFlowRef = useRef<HTMLDivElement>(null);
+  const lockedRunsPanelHeightRef = useRef<number | null>(readStoredRunsPanelHeight());
+  const [lockedRunsPanelHeight, setLockedRunsPanelHeight] = useState<number | null>(
+    () => lockedRunsPanelHeightRef.current,
+  );
 
   const addFiles = useCallback(
     async (files: FileList | null) => {
@@ -759,8 +777,6 @@ export function UploadPage() {
 
   const formatError = error?.startsWith("Unsupported format") ? error : null;
   const flowError = error && !formatError ? error : null;
-  const analyses = history.analyses;
-  const runCount = analyses.length;
   const hasUnsupportedFiles = draft.some((row) => Boolean(row.error));
   const hasSupportedUploads = supportedUploads.length > 0;
   const hasIngested = hasSupportedUploads;
@@ -772,6 +788,41 @@ export function UploadPage() {
   const allSourcesConfirmed =
     activeReviewUploads.every((upload) => isKnownPlatform(upload.platform));
   const totalReviewPosts = activeReviewUploads.reduce((sum, upload) => sum + upload.post_count, 0);
+
+  useLayoutEffect(() => {
+    const node = uploadFlowRef.current;
+    if (!node) return;
+
+    const calibrate = shouldCalibrateRunsPanelHeight(activeStep, uploadOpen, draft.length);
+
+    const captureHeight = () => {
+      if (!calibrate && lockedRunsPanelHeightRef.current !== null) return;
+
+      const height = Math.round(node.getBoundingClientRect().height);
+      if (height <= 0) return;
+
+      const next =
+        calibrate && activeStep === 1 && uploadOpen && draft.length === 0
+          ? height
+          : Math.max(lockedRunsPanelHeightRef.current ?? 0, height);
+      if (next <= 0) return;
+
+      lockedRunsPanelHeightRef.current = next;
+      setLockedRunsPanelHeight(next);
+      try {
+        sessionStorage.setItem(RUNS_PANEL_HEIGHT_KEY, String(next));
+      } catch {
+        // ignore storage failures
+      }
+    };
+
+    captureHeight();
+    const observer = new ResizeObserver(captureHeight);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [activeStep, uploadOpen, draft.length]);
+
+  const runsPanelHeight = lockedRunsPanelHeight ?? RUNS_PANEL_FALLBACK_PX;
 
   const continueToSourcesStep = () => {
     if (hasUnsupportedFiles || !hasSupportedUploads) return;
@@ -790,7 +841,7 @@ export function UploadPage() {
     <UploadPageFrame>
       <UploadPageHeader />
 
-      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:gap-10 xl:gap-12">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:items-start lg:gap-10 xl:gap-12">
         {/* Main flow — full column width, no half-width caps */}
         <div className="min-w-0">
           <input
@@ -805,7 +856,7 @@ export function UploadPage() {
             }}
           />
 
-          <div className="upload-flow">
+          <div ref={uploadFlowRef} className="upload-flow">
           <StepRail
             n={1}
             active={activeStep === 1}
@@ -1015,67 +1066,8 @@ export function UploadPage() {
           </div>
         </div>
 
-        <aside className="min-w-0 lg:pl-2">
-          <Card className="rounded-2xl border-border/40 bg-card/25 py-4 lg:sticky lg:top-24">
-            <CardHeader className="px-4">
-              <CardTitle className="text-[0.975rem] font-bold tracking-tight">My Runs</CardTitle>
-            </CardHeader>
-
-            <CardContent className="px-4">
-              {history.status === "loading" ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
-              ) : history.status === "error" ? (
-                <p className="text-sm text-primary">{history.error}</p>
-              ) : analyses.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No runs yet.</p>
-              ) : (
-                <ScrollArea className="max-h-[28rem]">
-                  <ul className="space-y-0 divide-y divide-border/40 pr-3">
-                    {analyses.map((analysis, index) => {
-                      const runNumber = runCount - index;
-                      const older = analyses[index + 1];
-                      const postDelta = older ? analysis.post_count - older.post_count : null;
-                      const topicDelta = older ? topicCount(analysis) - topicCount(older) : null;
-                      const isLatest = index === 0;
-
-                      return (
-                        <li key={analysis.analysis_id} className="py-4 first:pt-0">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className="min-w-0 break-words font-semibold">
-                              {formatRunLabel(analysis, runNumber)}
-                              {isLatest ? (
-                                <Badge
-                                  variant="outline"
-                                  className="ml-2 border-accent/40 text-[0.65rem] font-bold tracking-wider text-accent"
-                                >
-                                  LATEST
-                                </Badge>
-                              ) : null}
-                            </p>
-                          </div>
-                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            {formatShortDate(analysis.created_at)} · {platformsLabel(analysis)} ·{" "}
-                            {analysis.post_count.toLocaleString()} posts
-                            {postDelta !== null && postDelta !== 0 ? (
-                              <span className="text-accent">
-                                {" "}
-                                ({postDelta > 0 ? "+" : ""}
-                                {postDelta}
-                                {topicDelta !== null && topicDelta !== 0
-                                  ? ` · ${topicDelta > 0 ? "+" : ""}${topicDelta} topics`
-                                  : ""}
-                                )
-                              </span>
-                            ) : null}
-                          </p>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
+        <aside className="flex min-w-0 shrink-0 flex-col self-start lg:pl-2">
+          <MyRunsPanel history={history} panelHeight={runsPanelHeight} />
         </aside>
       </div>
     </UploadPageFrame>

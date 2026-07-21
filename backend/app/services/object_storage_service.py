@@ -37,20 +37,27 @@ def upload_bytes(
         # Emulator without Storage: persist under a local cache directory.
         return _write_local_fallback(path, content, digest, content_type)
 
-    bucket = get_storage_bucket()
-    blob = bucket.blob(path)
-    blob.upload_from_string(content, content_type=content_type)
-    blob.metadata = {"content_hash": digest, "user_id": user_id, "upload_id": upload_id}
-    blob.patch()
+    try:
+        bucket = get_storage_bucket()
+        blob = bucket.blob(path)
+        blob.upload_from_string(content, content_type=content_type)
+        blob.metadata = {"content_hash": digest, "user_id": user_id, "upload_id": upload_id}
+        blob.patch()
 
-    return {
-        "object_path": path,
-        "bucket": bucket.name,
-        "content_hash": digest,
-        "size_bytes": len(content),
-        "content_type": content_type,
-        "storage_backend": "gcs",
-    }
+        return {
+            "object_path": path,
+            "bucket": bucket.name,
+            "content_hash": digest,
+            "size_bytes": len(content),
+            "content_type": content_type,
+            "storage_backend": "gcs",
+        }
+    except Exception as exc:
+        # Firebase Storage may not be enabled yet (missing bucket). Posts still live in Firestore.
+        fallback = _write_local_fallback(path, content, digest, content_type)
+        fallback["storage_backend"] = "local_fallback"
+        fallback["gcs_error"] = str(exc)
+        return fallback
 
 
 def download_bytes(object_path: str, *, bucket_name: str | None = None) -> bytes:

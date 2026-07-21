@@ -11,6 +11,7 @@ export function formatShortDate(iso: string | undefined) {
 
 export function formatPlatform(platform: string) {
   if (!platform || platform === "mixed") return "Mixed";
+  if (platform === "sample") return "Pasted data";
   return platform.charAt(0).toUpperCase() + platform.slice(1);
 }
 

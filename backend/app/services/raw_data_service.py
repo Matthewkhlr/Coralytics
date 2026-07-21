@@ -271,16 +271,7 @@ def save_raw_upload(
     doc_ref.set(metadata)
 
     try:
-        if original_bytes is not None:
-            object_meta = object_storage_service.upload_bytes(
-                user_id=user_id,
-                upload_id=upload_id,
-                content=original_bytes,
-                filename=filename,
-                content_hash=content_hash,
-            )
-            metadata["object_storage"] = object_meta
-
+        # Persist Firestore children first so analysis works even if object storage is unavailable.
         if keep_legacy_files:
             for index, raw_file in enumerate(raw_files):
                 doc_id = _sanitize_doc_id(
@@ -292,6 +283,16 @@ def save_raw_upload(
             posts_service.save_normalized_posts(user_id, upload_id, posts)
             metadata["has_normalized_posts"] = True
             metadata["post_count"] = len(posts)
+
+        if original_bytes is not None:
+            object_meta = object_storage_service.upload_bytes(
+                user_id=user_id,
+                upload_id=upload_id,
+                content=original_bytes,
+                filename=filename,
+                content_hash=content_hash,
+            )
+            metadata["object_storage"] = object_meta
 
         metadata["status"] = RECORD_STATUS_READY
         metadata["updated_at"] = encode_timestamp()

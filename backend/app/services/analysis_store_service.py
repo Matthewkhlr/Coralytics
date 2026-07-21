@@ -28,6 +28,7 @@ from app.models.persistence import (
     serialize_record_for_api,
     with_v2_metadata,
 )
+from app.services import source_summary_service
 
 # Leave headroom under Firestore's 1,048,576-byte document cap.
 _FIRESTORE_SAFE_DOC_BYTES = 900_000
@@ -209,6 +210,21 @@ def _hydrate_post_insights(user_id: str, analysis: dict[str, Any]) -> dict[str, 
     return analysis
 
 
+def _hydrate_source_summary(user_id: str, analysis: dict[str, Any]) -> dict[str, Any]:
+    hydrated = dict(analysis)
+    hydrated["source_summary"] = source_summary_service.build_source_summary(
+        user_id,
+        [],
+        analysis.get("upload_ids") or [],
+        platform_breakdown=analysis.get("platform_breakdown"),
+    )
+    return hydrated
+
+
+def _hydrate_analysis(user_id: str, analysis: dict[str, Any]) -> dict[str, Any]:
+    return _hydrate_source_summary(user_id, _hydrate_post_insights(user_id, analysis))
+
+
 def save_analysis(
     user_id: str,
     analysis: dict[str, Any],
@@ -300,7 +316,7 @@ def get_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
     assert data is not None
     if not is_ready(data):
         raise KeyError(f"Analysis not found: {analysis_id}")
-    return serialize_record_for_api(_hydrate_post_insights(user_id, data))
+    return serialize_record_for_api(_hydrate_analysis(user_id, data))
 
 
 def list_analyses(
@@ -327,10 +343,10 @@ def list_analyses(
         data = doc.to_dict() or {}
         if not is_ready(data):
             continue
+        data = _hydrate_source_summary(user_id, data)
         if hydrate:
-            analyses.append(serialize_record_for_api(_hydrate_post_insights(user_id, data)))
-        else:
-            analyses.append(serialize_record_for_api(data))
+            data = _hydrate_post_insights(user_id, data)
+        analyses.append(serialize_record_for_api(data))
         if limit is not None and len(analyses) >= limit:
             break
     return analyses
@@ -341,7 +357,7 @@ def get_latest_analysis(user_id: str) -> dict[str, Any] | None:
     if not analyses:
         return None
     latest = analyses[0]
-    return serialize_record_for_api(_hydrate_post_insights(user_id, latest))
+    return serialize_record_for_api(_hydrate_analysis(user_id, latest))
 
 
 def delete_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:

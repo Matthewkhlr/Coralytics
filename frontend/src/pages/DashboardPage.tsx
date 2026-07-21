@@ -1,19 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import { createShare, getAnalysis, listPostsByTopic } from "@/api/client";
-import type { Analysis, PostSummary } from "@/api/types";
+import { createShare, listPostsByTopic } from "@/api/client";
+import type { PostSummary } from "@/api/types";
+import { AnalysisSnapshotBar } from "@/components/AnalysisSnapshotBar";
 import { DataStatusBanner } from "@/components/DataStatusBanner";
+import { OlderSnapshotBanner } from "@/components/OlderSnapshotBanner";
+import { PageLoadingOverlay } from "@/components/PageLoadingOverlay";
 import {
   OrganismViewport,
   type OrganismViewportHandle,
 } from "@/components/OrganismViewport";
-import { OceanPageFrame, PageHeader, PageTitle, PageDescription, SectionTitle } from "@/components/PageShell";
+import { OceanPageFrame, PageHeader, PageTitle } from "@/components/PageShell";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
-import { useLatestAnalysis } from "@/hooks/useLatestAnalysis";
-import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
+import { useSelectedAnalysis } from "@/hooks/useSelectedAnalysis";
 import { useUploads } from "@/hooks/useUploads";
-import { formatPlatform, formatRunLabel, formatShortDate } from "@/lib/format";
+import { LANDING_BUTTON, LANDING_BUTTON_SM, UPLOAD_CARD } from "@/lib/buttonStyles";
+import { formatPlatform } from "@/lib/format";
 import {
   formatAnalysisDiff,
   formatSentiment,
@@ -23,7 +30,6 @@ import {
 import { cn } from "@/lib/utils";
 
 type DashboardNavState = {
-  analysisId?: string;
   showDiff?: boolean;
 };
 
@@ -39,15 +45,23 @@ export function DashboardPage() {
   const location = useLocation();
   const navState = (location.state || {}) as DashboardNavState;
   const viewportRef = useRef<OrganismViewportHandle>(null);
-  const { status, analysis: latestAnalysis, error, reload } = useLatestAnalysis(user?.uid);
-  const history = useAnalysisHistory(user?.uid);
   const uploads = useUploads(user?.uid);
 
-  const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
-  const [selectedAnalysis, setSelectedAnalysis] = useState<Analysis | null>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const {
+    history,
+    latestStatus,
+    latestError,
+    reloadLatest,
+    analysis,
+    analysisLoading,
+    selectAnalysis,
+    selectLatest,
+    isLatest,
+    postsDeltaFromLatest,
+  } = useSelectedAnalysis(user?.uid, { requirePostInsights: true });
+
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
-  const [showDiffBanner, setShowDiffBanner] = useState(false);
+  const [showDiffBanner, setShowDiffBanner] = useState(Boolean(navState.showDiff));
 
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [branchPosts, setBranchPosts] = useState<PostSummary[]>([]);
@@ -58,50 +72,9 @@ export function DashboardPage() {
   const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
-    if (navState.analysisId) {
-      setSelectedAnalysisId(navState.analysisId);
-      setShowDiffBanner(Boolean(navState.showDiff));
-    } else if (latestAnalysis?.analysis_id && !selectedAnalysisId) {
-      setSelectedAnalysisId(latestAnalysis.analysis_id);
-    }
-  }, [navState.analysisId, navState.showDiff, latestAnalysis?.analysis_id, selectedAnalysisId]);
+    if (navState.showDiff) setShowDiffBanner(true);
+  }, [navState.showDiff]);
 
-  useEffect(() => {
-    if (!user || !selectedAnalysisId) {
-      setSelectedAnalysis(null);
-      return;
-    }
-
-    if (latestAnalysis?.analysis_id === selectedAnalysisId) {
-      setSelectedAnalysis(latestAnalysis);
-      return;
-    }
-
-    const fromHistory = history.analyses.find((a) => a.analysis_id === selectedAnalysisId);
-    if (fromHistory?.organism_data && fromHistory.post_insights) {
-      setSelectedAnalysis(fromHistory);
-      return;
-    }
-
-    let cancelled = false;
-    setAnalysisLoading(true);
-    void getAnalysis(user.uid, selectedAnalysisId)
-      .then((result) => {
-        if (!cancelled) setSelectedAnalysis(result);
-      })
-      .catch(() => {
-        if (!cancelled && latestAnalysis) setSelectedAnalysis(latestAnalysis);
-      })
-      .finally(() => {
-        if (!cancelled) setAnalysisLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user, selectedAnalysisId, latestAnalysis, history.analyses]);
-
-  const analysis = selectedAnalysis ?? latestAnalysis;
   const baseOrganism = resolveOrganismData(analysis?.organism_data);
   const organismData = useMemo(
     () =>
@@ -114,16 +87,10 @@ export function DashboardPage() {
   );
   const organismSource = baseOrganism.source;
 
-  const showBanner = status === "loading" || status === "error";
+  const showBanner = latestStatus === "error";
+  const isPageLoading = latestStatus === "loading" || analysisLoading;
   const topics = organismData.topics;
   const selectedMeta = topics.find((t) => t.name === selectedTopic) ?? null;
-  const runCount = history.analyses.length;
-  const selectedRunNumber = useMemo(() => {
-    if (!analysis) return 0;
-    const index = history.analyses.findIndex((a) => a.analysis_id === analysis.analysis_id);
-    if (index < 0) return runCount;
-    return runCount - index;
-  }, [analysis, history.analyses, runCount]);
 
   const platformTabs = useMemo(() => {
     const fromBreakdown = (analysis?.platform_breakdown || [])
@@ -133,17 +100,8 @@ export function DashboardPage() {
   }, [analysis?.platform_breakdown]);
 
   const uploadCount = analysis?.upload_ids?.length ?? uploads.uploads.length;
-  const dateRangeLabel = useMemo(() => {
-    const earliest = analysis?.date_range?.earliest;
-    const latest = analysis?.date_range?.latest;
-    if (!earliest && !latest) return null;
-    if (earliest && latest) {
-      return `${formatShortDate(earliest)} – ${formatShortDate(latest)}`;
-    }
-    return formatShortDate(earliest || latest || undefined);
-  }, [analysis?.date_range]);
-
   const diffText = formatAnalysisDiff(analysis?.diff);
+  const selectedAnalysisId = analysis?.analysis_id ?? null;
 
   const handleBranchClick = useCallback(
     async (topic: string) => {
@@ -203,231 +161,312 @@ export function DashboardPage() {
     }
   };
 
+  const handleSnapshotSelect = (analysisId: string) => {
+    selectAnalysis(analysisId);
+    setShowDiffBanner(false);
+  };
+
   return (
     <OceanPageFrame>
       {showBanner ? (
         <div className="mb-6">
-          <DataStatusBanner
-            status={status === "loading" ? "loading" : "error"}
-            error={error}
-            onRetry={() => void reload()}
-          />
+          <DataStatusBanner status="error" error={latestError} onRetry={() => void reloadLatest()} />
         </div>
       ) : null}
 
-      <PageHeader className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <PageLoadingOverlay loading={isPageLoading} className="min-h-[60vh]">
+      <PageHeader className="mb-6">
         <PageTitle>Explore Your Reef</PageTitle>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleExportPng}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border text-sm hover:bg-card transition"
-          >
-            <Download size={16} />
-            Screenshot
-          </button>
-          <button
-            type="button"
-            disabled={sharing || !analysis}
-            onClick={() => void handleCreateShare()}
-            className="px-4 py-2 rounded-full border border-border text-sm hover:bg-card transition disabled:opacity-50"
-          >
-            {sharing ? "Creating…" : "Share link"}
-          </button>
-        </div>
       </PageHeader>
 
-      {shareUrl ? (
-        <p className="mb-4 text-sm text-accent">
-          Copied:{" "}
-          <a href={shareUrl} className="underline break-all">
-            {shareUrl}
-          </a>
-        </p>
-      ) : null}
-      {shareError ? <p className="mb-4 text-sm text-primary">{shareError}</p> : null}
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:gap-10 xl:gap-12">
+        <div className="min-w-0 space-y-6">
+          <Card className={cn(UPLOAD_CARD, "py-4")}>
+            <CardContent className="space-y-4 px-4">
+              <AnalysisSnapshotBar
+                tone="upload"
+                analyses={history.analyses}
+                analysis={analysis}
+                onSelect={handleSnapshotSelect}
+                uploadCount={uploadCount}
+                showAddDataLink
+              />
 
-      {analysis && runCount > 0 ? (
-        <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-          <label className="inline-flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-accent">Run</span>
-            <select
-              value={analysis.analysis_id}
-              onChange={(e) => {
-                setSelectedAnalysisId(e.target.value);
-                setShowDiffBanner(false);
-              }}
-              className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground"
-            >
-              {history.analyses.map((item, index) => {
-                const runNumber = runCount - index;
-                return (
-                  <option key={item.analysis_id} value={item.analysis_id}>
-                    {formatRunLabel(item, runNumber)} · {item.post_count.toLocaleString()} posts
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-          <span>
-            {formatRunLabel(analysis, selectedRunNumber)} · {formatShortDate(analysis.created_at)} ·{" "}
-            {analysis.post_count.toLocaleString()} posts · {uploadCount} upload
-            {uploadCount === 1 ? "" : "s"}
-            {dateRangeLabel ? ` · ${dateRangeLabel}` : null}
-          </span>
-          <Link to="/upload" className="text-accent hover:underline">
-            Add data
-          </Link>
-        </div>
-      ) : null}
-
-      {showDiffBanner && diffText ? (
-        <div className="mb-4 rounded-xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-2">
-          <p>
-            <span className="font-semibold text-accent">What changed: </span>
-            {diffText}
-          </p>
-          <button
-            type="button"
-            onClick={() => setShowDiffBanner(false)}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Dismiss
-          </button>
-        </div>
-      ) : null}
-
-      {platformTabs.length > 0 ? (
-        <div className="mb-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setPlatformFilter(null)}
-            className={cn(
-              "px-3 py-1.5 rounded-full border text-xs font-semibold transition",
-              platformFilter === null
-                ? "border-accent bg-accent/15 text-foreground"
-                : "border-border text-muted-foreground hover:text-foreground",
-            )}
-          >
-            All
-          </button>
-          {platformTabs.map((platform) => (
-            <button
-              key={platform}
-              type="button"
-              onClick={() => setPlatformFilter(platform)}
-              className={cn(
-                "px-3 py-1.5 rounded-full border text-xs font-semibold transition",
-                platformFilter === platform
-                  ? "border-accent bg-accent/15 text-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {formatPlatform(platform)}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 lg:col-span-8">
-          <div className="rounded-2xl overflow-hidden border border-border/50 bg-card/40 h-[620px] p-2">
-            <OrganismViewport
-              ref={viewportRef}
-              data={organismData}
-              dataSource={organismSource}
-              appearance="dark"
-              isLoading={status === "loading" || analysisLoading}
-              onBranchClick={(topic) => void handleBranchClick(topic)}
-            />
-          </div>
-          <div className="mt-4 flex flex-wrap gap-3 justify-center text-xs">
-            <Legend swatch="var(--sentiment-positive)" label="Positive sentiment" />
-            <Legend swatch="var(--sentiment-neutral)" label="Neutral" />
-            <Legend swatch="var(--sentiment-negative)" label="Negative / risky" />
-            <span className="text-muted-foreground">
-              · Trunk height = account age · Branch thickness = post volume
-            </span>
-          </div>
-        </div>
-
-        <aside className="col-span-12 lg:col-span-4 rounded-2xl border border-border/60 bg-card p-6 min-h-[400px]">
-          {selectedTopic ? (
-            <div>
-              <div className="text-accent text-xs font-bold tracking-[0.2em]">TOPIC</div>
-              <h2 className="mt-2 text-2xl font-bold">{selectedTopic}</h2>
-              {selectedMeta ? (
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="rounded-xl bg-background/60 p-3">
-                    <div className="text-2xl font-bold">{selectedMeta.postVolume}</div>
-                    <div className="text-xs text-muted-foreground">Posts</div>
-                  </div>
-                  <div className="rounded-xl bg-background/60 p-3">
-                    <div
-                      className={`text-2xl font-bold ${
-                        selectedMeta.sentiment < 0 ? "text-primary" : "text-accent"
-                      }`}
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                {platformTabs.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    <PlatformChip
+                      active={platformFilter === null}
+                      onClick={() => setPlatformFilter(null)}
                     >
-                      {formatSentiment(selectedMeta.sentiment)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Sentiment</div>
+                      All
+                    </PlatformChip>
+                    {platformTabs.map((platform) => (
+                      <PlatformChip
+                        key={platform}
+                        active={platformFilter === platform}
+                        onClick={() => setPlatformFilter(platform)}
+                      >
+                        {formatPlatform(platform)}
+                      </PlatformChip>
+                    ))}
                   </div>
-                </div>
-              ) : null}
+                ) : (
+                  <span />
+                )}
 
-              <div className="mt-6 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                  Sample posts
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTopic(null)}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Clear
-                </button>
-              </div>
-
-              {branchLoading ? (
-                <p className="mt-3 text-sm text-muted-foreground">Loading posts…</p>
-              ) : null}
-              {branchError ? <p className="mt-3 text-sm text-primary">{branchError}</p> : null}
-
-              <div className="mt-3 space-y-3 max-h-[320px] overflow-y-auto pr-1">
-                {!branchLoading && !branchError && branchPosts.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No posts found for this topic.</p>
-                ) : null}
-                {branchPosts.map((post) => (
-                  <div
-                    key={post.id ?? post.content}
-                    className="rounded-xl bg-background/50 p-3 border border-border/50"
+                <div className="flex flex-wrap gap-2 sm:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className={LANDING_BUTTON}
+                    onClick={handleExportPng}
                   >
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{formatPlatform(post.platform ?? "unknown")}</span>
-                      <span>{formatSentiment(post.sentiment_compound)}</span>
-                    </div>
-                    <p className="mt-1.5 text-sm">{post.content}</p>
-                  </div>
-                ))}
+                    <Download size={14} className="mr-2" />
+                    Screenshot
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className={LANDING_BUTTON}
+                    disabled={sharing || !analysis}
+                    onClick={() => void handleCreateShare()}
+                  >
+                    {sharing ? "Creating…" : "Share link"}
+                  </Button>
+                </div>
               </div>
+
+              {!isLatest && analysis ? (
+                <OlderSnapshotBanner
+                  tone="upload"
+                  analysis={analysis}
+                  postsDeltaFromLatest={postsDeltaFromLatest}
+                  onViewLatest={selectLatest}
+                />
+              ) : null}
+
+              {showDiffBanner && diffText ? (
+                <Alert className="border-accent/35 bg-accent/10">
+                  <AlertDescription className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span>
+                      <span className="font-bold tracking-tight text-foreground">What changed: </span>
+                      {diffText}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={LANDING_BUTTON_SM}
+                      onClick={() => setShowDiffBanner(false)}
+                    >
+                      Dismiss
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {shareUrl ? (
+                <Alert className="border-accent/35 bg-accent/10">
+                  <AlertDescription className="text-sm">
+                    Copied:{" "}
+                    <a href={shareUrl} className="underline break-all text-accent">
+                      {shareUrl}
+                    </a>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {shareError ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{shareError}</AlertDescription>
+                </Alert>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className={cn(UPLOAD_CARD, "overflow-hidden py-0")}>
+            <CardContent className="p-2">
+              <div className="h-[min(62vh,620px)] min-h-[420px] overflow-hidden border border-foreground/15 bg-background/20">
+                <OrganismViewport
+                  ref={viewportRef}
+                  data={organismData}
+                  dataSource={organismSource}
+                  appearance="dark"
+                  isLoading={latestStatus === "loading" || analysisLoading}
+                  onBranchClick={(topic) => void handleBranchClick(topic)}
+                />
+              </div>
+            </CardContent>
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 px-4 pb-4 text-xs text-muted-foreground">
+              <Legend swatch="var(--sentiment-positive)" label="Positive sentiment" />
+              <Legend swatch="var(--sentiment-neutral)" label="Neutral" />
+              <Legend swatch="var(--sentiment-negative)" label="Negative / risky" />
+              <span>
+                Stem = account history · Branch = topic · Thickness = post volume · Color =
+                avg sentiment
+              </span>
             </div>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground">
-              <p className="max-w-xs mx-auto">
-                Click a branch on the organism to inspect what grew it.
-              </p>
-            </div>
-          )}
+          </Card>
+        </div>
+
+        <aside className="min-w-0 lg:pl-2">
+          <Card className={cn(UPLOAD_CARD, "py-4 lg:sticky lg:top-24")}>
+            <CardHeader className="px-4 pb-3">
+              <CardTitle className="text-[0.975rem] font-bold tracking-tight">
+                Topic Explorer
+              </CardTitle>
+            </CardHeader>
+
+            <CardContent className="px-4">
+              {selectedTopic ? (
+                <div>
+                  <p className="text-[0.975rem] font-bold tracking-tight text-foreground">
+                    {selectedTopic}
+                  </p>
+
+                  {selectedMeta ? (
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <StatTile label="Posts" value={String(selectedMeta.postVolume)} />
+                      <StatTile
+                        label="Sentiment"
+                        value={formatSentiment(selectedMeta.sentiment)}
+                        valueClassName={
+                          selectedMeta.sentiment < 0 ? "text-primary" : "text-accent"
+                        }
+                      />
+                    </div>
+                  ) : null}
+
+                  <div className="mt-6 flex items-center justify-between gap-3">
+                    <p className="text-[0.975rem] font-bold tracking-tight text-foreground">
+                      Sample posts
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={LANDING_BUTTON_SM}
+                      onClick={() => setSelectedTopic(null)}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+
+                  {branchLoading ? (
+                    <p className="mt-3 text-sm text-muted-foreground">Loading posts…</p>
+                  ) : null}
+                  {branchError ? (
+                    <p className="mt-3 text-sm text-primary">{branchError}</p>
+                  ) : null}
+
+                  <ScrollArea className="mt-3 max-h-[22rem]">
+                    <div className="space-y-3 pr-3">
+                      {!branchLoading && !branchError && branchPosts.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No posts found for this topic.
+                        </p>
+                      ) : null}
+                      {branchPosts.map((post) => (
+                        <div
+                          key={post.id ?? post.content}
+                          className="border border-foreground/15 bg-background/35 p-3 backdrop-blur-sm"
+                        >
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{formatPlatform(post.platform ?? "unknown")}</span>
+                            <span>{formatSentiment(post.sentiment_compound)}</span>
+                          </div>
+                          <p className="mt-1.5 text-sm leading-relaxed text-foreground/90">
+                            {post.content}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    Hover a topic branch for volume and sentiment · click to load sample posts.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {topics.map((topic) => (
+                      <Button
+                        key={topic.name}
+                        type="button"
+                        variant="outline"
+                        className={LANDING_BUTTON_SM}
+                        onClick={() => void handleBranchClick(topic.name)}
+                      >
+                        {topic.name}
+                      </Button>
+                    ))}
+                  </div>
+                  {topics.length === 0 ? (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                      No topics yet.{" "}
+                      <Link
+                        to="/upload"
+                        className="font-medium uppercase tracking-[0.18em] text-foreground/80 hover:text-foreground"
+                      >
+                        Upload data
+                      </Link>
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </aside>
       </div>
+      </PageLoadingOverlay>
     </OceanPageFrame>
+  );
+}
+
+function PlatformChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={onClick}
+      className={cn(
+        LANDING_BUTTON_SM,
+        active && "border-foreground/60 bg-accent/20 text-foreground",
+      )}
+    >
+      {children}
+    </Button>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
+  return (
+    <div className="border border-foreground/15 bg-background/35 p-3 backdrop-blur-sm">
+      <div className={cn("text-2xl font-bold font-display", valueClassName)}>{value}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+    </div>
   );
 }
 
 function Legend({ swatch, label }: { swatch: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className="w-3 h-3 rounded-full" style={{ background: swatch }} />
+      <span className="h-2.5 w-2.5 rounded-full" style={{ background: swatch }} />
       {label}
     </span>
   );

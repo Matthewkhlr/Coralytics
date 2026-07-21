@@ -75,6 +75,20 @@ export type AnalysisDateRange = {
   latest: string | null;
 };
 
+export type AnalysisSourceUpload = {
+  upload_id: string;
+  filename: string;
+  platform: string;
+  post_count: number;
+};
+
+export type AnalysisSourceSummary = {
+  upload_count: number;
+  post_count: number;
+  platforms: string[];
+  uploads: AnalysisSourceUpload[];
+};
+
 export type PostInsight = {
   id?: string;
   _upload_id?: string;
@@ -103,6 +117,7 @@ export type Analysis = {
   created_at?: string;
   updated_at?: string;
   upload_ids?: string[];
+  source_summary?: AnalysisSourceSummary | null;
   date_range?: AnalysisDateRange | null;
   diff?: AnalysisDiff | null;
   post_insights?: PostInsight[];

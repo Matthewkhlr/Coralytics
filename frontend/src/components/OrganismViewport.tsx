@@ -6,11 +6,18 @@ import {
 } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { coralV4 } from "../three/generators/coralV4";
+import {
+  applyCoralHoverHighlight,
+  buildTopicHighlightMap,
+  buildTrunkHighlightMeshes,
+  formatCoralHoverTooltip,
+  pickCoralHoverTarget,
+  type CoralHoverTarget,
+} from "../three/coralTopicHighlight";
+import { coralSilhouette } from "../three/generators/coralSilhouette";
 import type { OrganismData, OrganismGenerator } from "../three/organismTypes";
 
-const useGenerator: OrganismGenerator = coralV4;
-const CAMERA_Y = 3;
+const defaultGenerator: OrganismGenerator = coralSilhouette;
 
 export type OrganismViewportHandle = {
   exportPng: () => string | null;
@@ -22,15 +29,17 @@ type OrganismViewportProps = {
   appearance?: "light" | "dark";
   isLoading?: boolean;
   onBranchClick?: (topicName: string) => void;
+  generator?: OrganismGenerator;
 };
 
 export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewportProps>(
   function OrganismViewport(
-    { data, dataSource = "analysis", appearance = "light", isLoading = false, onBranchClick },
+    { data, dataSource = "analysis", appearance = "light", isLoading = false, onBranchClick, generator = defaultGenerator },
     ref,
   ) {
     const hostRef = useRef<HTMLDivElement | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+    const tooltipRef = useRef<HTMLDivElement | null>(null);
 
     useImperativeHandle(ref, () => ({
       exportPng: () => {
@@ -47,11 +56,16 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
       const isDark = appearance === "dark";
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(isDark ? "#071828" : "#f9fbfc");
+      scene.background = new THREE.Color(isDark ? "#06243b" : "#bfe0f2");
+      scene.fog = new THREE.Fog(
+        isDark ? "#06243b" : "#8eb8d4",
+        isDark ? 8 : 12,
+        isDark ? 22 : 28,
+      );
 
-      const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
-      camera.position.set(4, CAMERA_Y, 6);
-      camera.lookAt(0, 0.6, 0);
+      const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+      camera.position.set(3.8, 2.6, 5.4);
+      camera.lookAt(0, 1.1, 0);
 
       const renderer = new THREE.WebGLRenderer({
         antialias: true,
@@ -62,21 +76,43 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
       host.appendChild(renderer.domElement);
       rendererRef.current = renderer;
 
-      const ambientLight = new THREE.AmbientLight("#ffffff", 1.4);
-      const keyLight = new THREE.DirectionalLight("#ffffff", 2);
-      keyLight.position.set(3, 5, 4);
-      scene.add(ambientLight, keyLight);
-
-      const grid = new THREE.GridHelper(
-        6,
-        12,
-        isDark ? "#1a4a58" : "#cbd5db",
-        isDark ? "#0e3040" : "#e3e9ed",
+      const ambientLight = new THREE.AmbientLight(
+        isDark ? "#0c3654" : "#7fb0cc",
+        isDark ? 0.5 : 0.85,
       );
-      grid.position.y = -1.2;
-      scene.add(grid);
+      const hemiLight = new THREE.HemisphereLight(
+        isDark ? "#3a9bc4" : "#d8effa",
+        isDark ? "#020a14" : "#2f5a74",
+        isDark ? 0.55 : 0.75,
+      );
+      const keyLight = new THREE.DirectionalLight(isDark ? "#bce4ff" : "#ffffff", isDark ? 2.6 : 3.1);
+      keyLight.position.set(2, 8, 4);
+      const fillLight = new THREE.DirectionalLight(isDark ? "#4a90b8" : "#a8d4ea", 0.55);
+      fillLight.position.set(-4, 2, -3);
+      scene.add(ambientLight, hemiLight, keyLight, fillLight);
 
-      const { coral, cleanup } = useGenerator(scene, data);
+      const sandGeometry = new THREE.CircleGeometry(4.2, 48);
+      const sandMaterial = new THREE.MeshStandardMaterial({
+        color: isDark ? "#13334a" : "#7fa6bd",
+        roughness: 0.95,
+        metalness: 0,
+      });
+      const sand = new THREE.Mesh(sandGeometry, sandMaterial);
+      sand.rotation.x = -Math.PI / 2;
+      sand.position.y = -0.03;
+      scene.add(sand);
+
+      const { coral, cleanup } = generator(scene, data);
+      const topicMeshes = buildTopicHighlightMap(coral);
+      const trunkMeshes = buildTrunkHighlightMeshes(coral);
+      let hoveredTarget: CoralHoverTarget | null = null;
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enablePan = false;
+      controls.target.set(0, 1.1, 0);
+      controls.minDistance = 3.2;
+      controls.maxDistance = 10;
+      controls.maxPolarAngle = Math.PI * 0.52;
 
       const resize = () => {
         const { clientWidth, clientHeight } = host;
@@ -90,33 +126,76 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
       resize();
 
       let frameId = 0;
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enablePan = false;
 
       const raycaster = new THREE.Raycaster();
       const pointer = new THREE.Vector2();
 
-      const handleClick = (event: MouseEvent) => {
-        if (!onBranchClick) return;
+      const updatePointer = (event: MouseEvent) => {
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      };
+
+      const pickTarget = (): CoralHoverTarget | null => {
         raycaster.setFromCamera(pointer, camera);
-        const hits = raycaster.intersectObjects(coral.children, true);
-        for (const hit of hits) {
-          let current: THREE.Object3D | null = hit.object;
-          while (current) {
-            const topicName = current.userData?.topicName as string | undefined;
-            if (topicName) {
-              onBranchClick(topicName);
-              return;
-            }
-            current = current.parent;
-          }
+        return pickCoralHoverTarget(coral, raycaster);
+      };
+
+      const setHoveredTarget = (target: CoralHoverTarget | null) => {
+        const prevKey =
+          hoveredTarget?.kind === "topic"
+            ? `topic:${hoveredTarget.name}`
+            : hoveredTarget?.kind === "trunk"
+              ? "trunk"
+              : null;
+        const nextKey =
+          target?.kind === "topic"
+            ? `topic:${target.name}`
+            : target?.kind === "trunk"
+              ? "trunk"
+              : null;
+        if (prevKey === nextKey) return;
+
+        hoveredTarget = target;
+        applyCoralHoverHighlight(topicMeshes, trunkMeshes, hoveredTarget);
+
+        const tooltip = tooltipRef.current;
+        if (!tooltip) return;
+
+        const text = formatCoralHoverTooltip(hoveredTarget);
+        if (text) {
+          tooltip.textContent = text;
+          tooltip.hidden = false;
+        } else {
+          tooltip.textContent = "";
+          tooltip.hidden = true;
         }
       };
 
+      const handlePointerMove = (event: MouseEvent) => {
+        updatePointer(event);
+        const target = pickTarget();
+        setHoveredTarget(target);
+        renderer.domElement.style.cursor =
+          target?.kind === "topic" ? "pointer" : "grab";
+      };
+
+      const handlePointerLeave = () => {
+        setHoveredTarget(null);
+        renderer.domElement.style.cursor = "grab";
+      };
+
+      const handleClick = (event: MouseEvent) => {
+        if (!onBranchClick) return;
+        updatePointer(event);
+        const target = pickTarget();
+        if (target?.kind === "topic") onBranchClick(target.name);
+      };
+
+      renderer.domElement.addEventListener("pointermove", handlePointerMove);
+      renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
       renderer.domElement.addEventListener("click", handleClick);
+      renderer.domElement.style.cursor = "grab";
 
       const render = () => {
         frameId = window.requestAnimationFrame(render);
@@ -127,15 +206,21 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
 
       return () => {
         window.cancelAnimationFrame(frameId);
+        renderer.domElement.removeEventListener("pointermove", handlePointerMove);
+        renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
         renderer.domElement.removeEventListener("click", handleClick);
+        renderer.domElement.style.cursor = "";
+        applyCoralHoverHighlight(topicMeshes, trunkMeshes, null);
         observer.disconnect();
         controls.dispose();
         cleanup();
+        sandGeometry.dispose();
+        sandMaterial.dispose();
         renderer.dispose();
         rendererRef.current = null;
         host.removeChild(renderer.domElement);
       };
-    }, [data, onBranchClick, appearance]);
+    }, [data, onBranchClick, appearance, generator]);
 
     return (
       <div className="organism-viewport-wrapper">
@@ -148,10 +233,11 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
               Loading coral…
             </div>
           ) : null}
+          <div ref={tooltipRef} className="viewport-tooltip" hidden aria-live="polite" />
           {dataSource !== "sample" ? (
             <div className="viewport-label">
-              {data.topics.length} topic{data.topics.length === 1 ? "" : "s"} · click branches to
-              explore
+              {data.topics.length} topic{data.topics.length === 1 ? "" : "s"} · stem =
+              account history · branches = topics
             </div>
           ) : null}
         </div>

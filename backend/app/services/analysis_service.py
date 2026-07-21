@@ -30,6 +30,7 @@ from app.services import (
     firestore_service,
     red_flag_service,
     sentiment_service,
+    source_summary_service,
     topic_service,
 )
 
@@ -433,7 +434,18 @@ def run_user_analysis(
     }
 
     resolved_upload_ids = sorted(
-        {str(post["_upload_id"]) for post in posts if post.get("_upload_id")}
+        {
+            uid
+            for post in posts
+            for uid in [source_summary_service.post_upload_id(post)]
+            if uid
+        }
+    )
+    source_summary = source_summary_service.build_source_summary(
+        user_id,
+        posts,
+        resolved_upload_ids,
+        platform_breakdown=platform_breakdown,
     )
 
     trimmed_name = (name or "").strip()
@@ -453,6 +465,7 @@ def run_user_analysis(
         "evolution": evolution,
         "date_range": date_range,
         "diff": diff,
+        "source_summary": source_summary,
     }
 
     if not persist:

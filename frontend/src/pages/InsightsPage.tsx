@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getAnalysis } from "@/api/client";
-import type { Analysis } from "@/api/types";
+import { AnalysisSnapshotBar } from "@/components/AnalysisSnapshotBar";
 import { DataStatusBanner } from "@/components/DataStatusBanner";
-import { OceanPageFrame, PageDescription, PageHeader, PageTitle, SectionTitle } from "@/components/PageShell";
+import { OlderSnapshotBanner } from "@/components/OlderSnapshotBanner";
+import { PageLoadingOverlay } from "@/components/PageLoadingOverlay";
+import { OceanPageFrame, PageDescription, PageHeader, PageTitle } from "@/components/PageShell";
 import { useAuth } from "@/contexts/AuthContext";
-import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
-import { useLatestAnalysis } from "@/hooks/useLatestAnalysis";
-import { formatPlatform, formatRunLabel, formatShortDate } from "@/lib/format";
+import { useSelectedAnalysis } from "@/hooks/useSelectedAnalysis";
+import { formatPlatform, formatShortDate } from "@/lib/format";
 import { formatAnalysisDiff, formatSentiment, formatSentimentRatio, getSentimentRatio, resolveOrganismData } from "@/lib/organismData";
 import { cn } from "@/lib/utils";
 
@@ -152,43 +151,21 @@ function ActivityBars({ data }: { data: { month: string; count: number }[] }) {
 
 export function InsightsPage() {
   const { user } = useAuth();
-  const history = useAnalysisHistory(user?.uid);
-  const { status: latestStatus, analysis: latestAnalysis, error, reload } = useLatestAnalysis(user?.uid);
+  const {
+    history,
+    latestStatus,
+    latestError,
+    reloadLatest,
+    analysis,
+    analysisLoading,
+    selectAnalysis,
+    selectLatest,
+    isLatest,
+    postsDeltaFromLatest,
+  } = useSelectedAnalysis(user?.uid);
 
-  const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
-  const [selectedAnalysis, setSelectedAnalysis] = useState<Analysis | null>(null);
-
-  useEffect(() => {
-    if (latestAnalysis?.analysis_id && !selectedAnalysisId) {
-      setSelectedAnalysisId(latestAnalysis.analysis_id);
-    }
-  }, [latestAnalysis?.analysis_id, selectedAnalysisId]);
-
-  useEffect(() => {
-    if (!user || !selectedAnalysisId) {
-      setSelectedAnalysis(null);
-      return;
-    }
-    if (latestAnalysis?.analysis_id === selectedAnalysisId) {
-      setSelectedAnalysis(latestAnalysis);
-      return;
-    }
-    const cached = history.analyses.find((a) => a.analysis_id === selectedAnalysisId);
-    if (cached) {
-      setSelectedAnalysis(cached);
-      return;
-    }
-    let cancelled = false;
-    void getAnalysis(user.uid, selectedAnalysisId).then((result) => {
-      if (!cancelled) setSelectedAnalysis(result);
-    });
-    return () => { cancelled = true; };
-  }, [user, selectedAnalysisId, latestAnalysis, history.analyses]);
-
-  const analysis = selectedAnalysis ?? latestAnalysis;
   const { data: organismData } = resolveOrganismData(analysis?.organism_data);
 
-  const isLoading = latestStatus === "loading" && !analysis;
   const showBanner = latestStatus === "error" && !analysis;
 
   const topics =
@@ -240,24 +217,18 @@ export function InsightsPage() {
   const accountAgeDays = analysis?.organism_data?.accountAgeDays ?? organismData.accountAgeDays;
   const ageLabel = formatAge(accountAgeDays);
 
-  const runCount = history.analyses.length;
-  const selectedRunNumber = useMemo(() => {
-    if (!analysis) return 0;
-    const idx = history.analyses.findIndex((a) => a.analysis_id === analysis.analysis_id);
-    if (idx < 0) return runCount;
-    return runCount - idx;
-  }, [analysis, history.analyses, runCount]);
-
   const isEmpty = !analysis && latestStatus !== "loading";
+  const isPageLoading = latestStatus === "loading" || analysisLoading;
 
   return (
     <OceanPageFrame>
       {showBanner ? (
         <div className="mb-6">
-          <DataStatusBanner status="error" error={error} onRetry={() => void reload()} />
+          <DataStatusBanner status="error" error={latestError} onRetry={() => void reloadLatest()} />
         </div>
       ) : null}
 
+      <PageLoadingOverlay loading={isPageLoading} className="min-h-[60vh]">
       <PageHeader>
         <PageTitle>What your reef is telling you.</PageTitle>
         <PageDescription>
@@ -266,24 +237,20 @@ export function InsightsPage() {
         </PageDescription>
       </PageHeader>
 
-      {history.status === "success" && history.analyses.length > 1 ? (
-        <div className="mb-2">
-          <label className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="font-semibold uppercase tracking-wider">Run</span>
-            <select value={selectedAnalysisId ?? ""} onChange={(e) => setSelectedAnalysisId(e.target.value)}
-              className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground min-w-[200px]">
-              {history.analyses.map((item, index) => {
-                const runNum = runCount - index;
-                return (
-                  <option key={item.analysis_id} value={item.analysis_id}>
-                    {formatRunLabel(item, runNum)} &middot; {item.post_count.toLocaleString()} posts &middot; {formatShortDate(item.created_at)}
-                  </option>
-                );
-              })}
-            </select>
-            {analysis ? <span className="text-muted-foreground">Run {selectedRunNumber} of {runCount}</span> : null}
-          </label>
-        </div>
+      <AnalysisSnapshotBar
+        className="mb-4"
+        analyses={history.analyses}
+        analysis={analysis}
+        onSelect={selectAnalysis}
+      />
+
+      {!isLatest && analysis ? (
+        <OlderSnapshotBanner
+          className="mb-4"
+          analysis={analysis}
+          postsDeltaFromLatest={postsDeltaFromLatest}
+          onViewLatest={selectLatest}
+        />
       ) : null}
 
       {isEmpty ? (
@@ -673,6 +640,7 @@ export function InsightsPage() {
 
         </div>
       )}
+      </PageLoadingOverlay>
     </OceanPageFrame>
   );
 }

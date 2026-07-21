@@ -26,6 +26,16 @@ export const SENTIMENT_LEGEND: { key: Sentiment; label: string; color: string }[
 // isn't available and we have to derive it from sentiment_compound
 const SENTIMENT_NEUTRAL_RANGE = 0.15;
 
+export function getTopicSentiment(compound: number): Sentiment {
+  if (compound >= SENTIMENT_NEUTRAL_RANGE) return "positive";
+  if (compound <= -SENTIMENT_NEUTRAL_RANGE) return "negative";
+  return "neutral";
+}
+
+export function getTopicSentimentColor(compound: number): string {
+  return SENTIMENT_COLORS[getTopicSentiment(compound)];
+}
+
 export function getSentiment(post: OrganismPost): Sentiment {
   const label = (post as any).sentiment_label;
   if (label === "positive" || label === "negative" || label === "neutral") {

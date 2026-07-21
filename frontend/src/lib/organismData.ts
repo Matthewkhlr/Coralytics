@@ -181,7 +181,7 @@ export function formatAnalysisDiff(
 ): string | null {
   if (!diff) return null;
   if (diff.no_meaningful_change) {
-    return "No meaningful change - this looks like data you already had.";
+    return "No meaningful change. This looks like data you already had.";
   }
 
   const parts: string[] = [];
@@ -191,12 +191,6 @@ export function formatAnalysisDiff(
   }
   if (diff.account_age_delta_days > 0) {
     parts.push(`history +${diff.account_age_delta_days} days`);
-  }
-  if (diff.topics_emerging.length) {
-    parts.push(`new topics: ${diff.topics_emerging.join(", ")}`);
-  }
-  if (diff.topics_fading.length) {
-    parts.push(`fading: ${diff.topics_fading.join(", ")}`);
   }
   if (!parts.length) return null;
   return parts.join(" · ");

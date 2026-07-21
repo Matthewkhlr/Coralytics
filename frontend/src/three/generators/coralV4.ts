@@ -2,6 +2,37 @@ import * as THREE from "three";
 import type { OrganismGenerator, OrganismPost } from "../organismTypes";
 import { getSentiment, getCategory, SENTIMENT_COLORS, CATEGORY_COLORS } from "./organismColors";
 
+// Reef-inspired palette (aligned with LandingReef / coralV2–V3 tones).
+const CORAL_TRUNK_BASE = "#d4927f";
+const CORAL_TRUNK_MID = "#e8a89a";
+const CORAL_TRUNK_TIP = "#ffd4c8";
+const CORAL_BRANCH_PALETTE = [
+  "#ff7f6e",
+  "#ff9f68",
+  "#f472b6",
+  "#fb7185",
+  "#fda4af",
+  "#fdba74",
+  "#e879f9",
+  "#c4b5fd",
+];
+const CORAL_POLYP_BASE = "#ffe8e0";
+const MAX_POLYPS_PER_BRANCH = 36;
+
+function blendHex(base: string, accent: string, amount: number): string {
+  return `#${new THREE.Color(base).lerp(new THREE.Color(accent), amount).getHexString()}`;
+}
+
+function pickDisplayPosts(posts: OrganismPost[], max: number): OrganismPost[] {
+  if (posts.length <= max) return posts;
+  const picked: OrganismPost[] = [];
+  for (let i = 0; i < max; i += 1) {
+    const index = Math.floor((i + 0.5) * (posts.length / max));
+    picked.push(posts[Math.min(index, posts.length - 1)]);
+  }
+  return picked;
+}
+
 // Helper: recursively build a skinny, forking twig off a tip.
 // Fixed bug: children used to attach to `segment` (already offset by length/2)
 // with an additional `length` offset, landing them at 1.5x the segment length
@@ -207,21 +238,25 @@ function makeSnakeStem(
 // other way around. Materials are pulled from a shared cache keyed by hex
 // color rather than created fresh per polyp, since with hundreds of posts
 // that'd otherwise mean hundreds of near-duplicate materials.
-const POLYP_SCALE = 0.55; // turn down for more minimal/subtle polyps, up for chunkier ones
+const POLYP_SCALE = 0.72;
 
 function getCachedMaterial(
   cache: Map<string, THREE.MeshStandardMaterial>,
   color: string,
+  options: { emissive?: string; emissiveIntensity?: number } = {},
 ): THREE.MeshStandardMaterial {
-  let mat = cache.get(color);
+  const key = `${color}:${options.emissive ?? ""}:${options.emissiveIntensity ?? 0}`;
+  let mat = cache.get(key);
   if (!mat) {
     mat = new THREE.MeshStandardMaterial({
       color,
-      roughness: 0.7,
-      metalness: 0.0,
-      flatShading: true,
+      emissive: options.emissive ? new THREE.Color(options.emissive) : new THREE.Color(0x000000),
+      emissiveIntensity: options.emissiveIntensity ?? 0,
+      roughness: 0.62,
+      metalness: 0.02,
+      flatShading: false,
     });
-    cache.set(color, mat);
+    cache.set(key, mat);
   }
   return mat;
 }
@@ -234,35 +269,54 @@ function buildPolyp(
 ): THREE.Group {
   const polyp = new THREE.Group();
 
-  const polypBaseRadius = branchRadius * 1.3 * POLYP_SCALE;
-  const polypBaseHeight = branchRadius * 2.2 * POLYP_SCALE;
+  const polypBaseRadius = branchRadius * 1.55 * POLYP_SCALE;
+  const polypBaseHeight = branchRadius * 1.1 * POLYP_SCALE;
   const polypBaseGeometry = new THREE.CylinderGeometry(
-    polypBaseRadius,
+    polypBaseRadius * 0.92,
     polypBaseRadius,
     polypBaseHeight,
-    12,
+    16,
     1,
   );
-  const polypBaseMaterial = getCachedMaterial(materialCache, baseColor);
+  const polypBaseMaterial = getCachedMaterial(materialCache, baseColor, {
+    emissive: baseColor,
+    emissiveIntensity: 0.08,
+  });
 
   const polypBase = new THREE.Mesh(polypBaseGeometry, polypBaseMaterial);
   polypBase.position.y = polypBaseHeight / 2;
   polyp.add(polypBase);
 
-  const tentacleHeight = branchRadius * 3 * POLYP_SCALE;
-  const tentacleRadius = branchRadius * 0.4 * POLYP_SCALE;
+  const cupGeometry = new THREE.SphereGeometry(
+    polypBaseRadius * 0.72,
+    14,
+    10,
+    0,
+    Math.PI * 2,
+    0,
+    Math.PI * 0.42,
+  );
+  const cup = new THREE.Mesh(cupGeometry, polypBaseMaterial);
+  cup.position.y = polypBaseHeight * 0.92;
+  polyp.add(cup);
+
+  const tentacleHeight = branchRadius * 2.4 * POLYP_SCALE;
+  const tentacleRadius = branchRadius * 0.28 * POLYP_SCALE;
   const tentacleGeom = new THREE.CylinderGeometry(
-    tentacleRadius,
+    tentacleRadius * 0.55,
     tentacleRadius,
     tentacleHeight,
-    6,
+    8,
     1,
   );
-  const tentacleMat = getCachedMaterial(materialCache, tentacleColor);
+  const tentacleMat = getCachedMaterial(materialCache, tentacleColor, {
+    emissive: tentacleColor,
+    emissiveIntensity: 0.06,
+  });
 
-  const tentacleNum = 6;
-  const ringRadius = branchRadius * 1.8 * POLYP_SCALE;
-  const baseTilt = 0.5;
+  const tentacleNum = 8;
+  const ringRadius = branchRadius * 1.45 * POLYP_SCALE;
+  const baseTilt = 0.62;
 
   for (let i = 0; i < tentacleNum; i++) {
     const angle = (i / tentacleNum) * Math.PI * 2;
@@ -270,7 +324,7 @@ function buildPolyp(
 
     tentacle.position.set(
       Math.cos(angle) * ringRadius,
-      polypBaseHeight + tentacleHeight / 2,
+      polypBaseHeight + tentacleHeight * 0.42,
       Math.sin(angle) * ringRadius,
     );
     tentacle.rotation.z = Math.sin(angle) * baseTilt;
@@ -282,20 +336,23 @@ function buildPolyp(
   return polyp;
 }
 
-export const coralV4: OrganismGenerator = (scene, data) => {
-  // ===== LOG 1: generator entry =====
-  console.log("[coralV4] generator start", {
-    accountAgeDays: data.accountAgeDays,
-    topics: (data.topics ?? []).map(t => ({ name: t.name, postVolume: t.postVolume })),
-    postsLength: data.posts?.length ?? 0,
+function buildBranchMaterial(color: string): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.58,
+    metalness: 0.03,
+    flatShading: false,
+    emissive: new THREE.Color(color),
+    emissiveIntensity: 0.06,
   });
+}
 
+export const coralV4: OrganismGenerator = (scene, data) => {
   const coral = new THREE.Group();
   scene.add(coral);
 
-  // shared across every polyp built below, keyed by hex color, so we don't
-  // mint duplicate materials for every post
   const polypMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+  const branchMaterials: THREE.MeshStandardMaterial[] = [];
 
   const posts = data.posts ?? [];
 
@@ -321,46 +378,64 @@ export const coralV4: OrganismGenerator = (scene, data) => {
     .filter((t) => (postsByTopic.get(t.name)?.length ?? 0) > 0)
     .map((t) => ({ name: t.name, postVolume: t.postVolume }));
 
-  // ===== LOG 2: topic grouping =====
-  console.log("[coralV4] postsByTopic keys", [...postsByTopic.keys()]);
-  console.log("[coralV4] topicEntries", topicEntries.map(t => t.name));
-
   const accountAgeDays = data.accountAgeDays ?? 0;
 
-  // trunk height based on account age (1–8 units)
   const ageYears = accountAgeDays / 365;
   const trunkHeight = THREE.MathUtils.clamp(ageYears, 1, 8);
 
-  // ========== 1. Trunk ==========
-  const trunkRadiusTop = 0.15;
-  const trunkRadiusBottom = 0.25;
-  const trunkGeometry = new THREE.CylinderGeometry(
-    trunkRadiusTop,
+  // ========== 1. Trunk (staghorn-style base + soft tip) ==========
+  const trunkRadiusTop = 0.14;
+  const trunkRadiusBottom = 0.28;
+  const trunkBaseGeometry = new THREE.CylinderGeometry(
+    trunkRadiusTop * 1.05,
     trunkRadiusBottom,
-    trunkHeight,
+    trunkHeight * 0.86,
+    18,
+    3,
+  );
+  const trunkMidGeometry = new THREE.CylinderGeometry(
+    trunkRadiusTop,
+    trunkRadiusTop * 1.12,
+    trunkHeight * 0.14,
     16,
     1,
   );
+  const trunkTipGeometry = new THREE.ConeGeometry(trunkRadiusTop * 0.95, trunkHeight * 0.18, 14);
 
-  const trunkMaterial = new THREE.MeshStandardMaterial({
-    color: "#ffadff",
-    roughness: 0.6,
-    metalness: 0.0,
-    flatShading: true,
+  const trunkBaseMaterial = new THREE.MeshStandardMaterial({
+    color: CORAL_TRUNK_BASE,
+    roughness: 0.68,
+    metalness: 0.02,
+    flatShading: false,
+  });
+  const trunkMidMaterial = new THREE.MeshStandardMaterial({
+    color: CORAL_TRUNK_MID,
+    roughness: 0.62,
+    metalness: 0.02,
+    flatShading: false,
+  });
+  const trunkTipMaterial = new THREE.MeshStandardMaterial({
+    color: CORAL_TRUNK_TIP,
+    roughness: 0.55,
+    metalness: 0.01,
+    flatShading: false,
+    emissive: new THREE.Color(CORAL_TRUNK_TIP),
+    emissiveIntensity: 0.05,
   });
 
-  const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
-  trunk.position.y = trunkHeight / 2; // base at y = 0
-  coral.add(trunk);
+  const trunkBase = new THREE.Mesh(trunkBaseGeometry, trunkBaseMaterial);
+  trunkBase.position.y = (trunkHeight * 0.86) / 2;
+  coral.add(trunkBase);
+
+  const trunkMid = new THREE.Mesh(trunkMidGeometry, trunkMidMaterial);
+  trunkMid.position.y = trunkHeight * 0.86 + (trunkHeight * 0.14) / 2;
+  coral.add(trunkMid);
+
+  const trunkTip = new THREE.Mesh(trunkTipGeometry, trunkTipMaterial);
+  trunkTip.position.y = trunkHeight + (trunkHeight * 0.18) / 2;
+  coral.add(trunkTip);
 
   // ========== 2. Snaking branches: one per topic ==========
-  const branchMaterial = new THREE.MeshStandardMaterial({
-    color: "#ff3ba8",
-    roughness: 0.7,
-    metalness: 0.0,
-    flatShading: true,
-  });
-
   const baseBranchLength = 1.0;
   const baseBranchRadius = 0.05;
   const baseBranchDepth = 2; // fork depth for the decorative twigs at each branch tip
@@ -371,15 +446,12 @@ export const coralV4: OrganismGenerator = (scene, data) => {
 
   topicEntries.forEach((entry, index) => {
     const postsThisTopic = postsByTopic.get(entry.name) ?? [];
+    const branchColor = CORAL_BRANCH_PALETTE[index % CORAL_BRANCH_PALETTE.length];
+    const branchMaterial = buildBranchMaterial(branchColor);
+    branchMaterials.push(branchMaterial);
 
-    // ===== LOG 3: per-branch info =====
     const t = (index + 1) / (topicCount + 1);
     const heightOnTrunk = t * trunkHeight;
-    console.log("[coralV4] branch", entry.name, {
-      index,
-      postCount: postsThisTopic.length,
-      heightOnTrunk,
-    });
 
     // place branch root somewhere up the trunk
     // distribute branches evenly around the trunk, with a slight spiral
@@ -470,20 +542,21 @@ export const coralV4: OrganismGenerator = (scene, data) => {
       branchMaterial,
     );
 
-    // ========== 3. Polyps along this branch: one per post ==========
-    postsThisTopic.forEach((post, postIndex) => {
-      const postT = (postIndex + 1) / (postsThisTopic.length + 1); // 0..1
+    // ========== 3. Polyps along this branch (sampled for clarity) ==========
+    const displayPosts = pickDisplayPosts(postsThisTopic, MAX_POLYPS_PER_BRANCH);
+    displayPosts.forEach((post, postIndex) => {
+      const postT = (postIndex + 1) / (displayPosts.length + 1);
       const sample = sampleAt(postT);
 
       const sentiment = getSentiment(post);
       const category = getCategory(post);
-      const baseColor = SENTIMENT_COLORS[sentiment];
-      const tentacleColor = CATEGORY_COLORS[category];
+      const baseColor = blendHex(CORAL_POLYP_BASE, SENTIMENT_COLORS[sentiment], 0.38);
+      const tentacleColor = blendHex(branchColor, CATEGORY_COLORS[category], 0.45);
 
       const polyp = buildPolyp(sample.radius, baseColor, tentacleColor, polypMaterialCache);
 
-      const azimuth = Math.random() * Math.PI * 2;
-      const outwardTilt = 1.15 + Math.random() * 0.55; // ~66-97 degrees off the branch axis
+      const azimuth = (postIndex / displayPosts.length) * Math.PI * 2 + Math.random() * 0.35;
+      const outwardTilt = 0.55 + Math.random() * 0.35;
 
       const offset = new THREE.Object3D();
       offset.position.copy(sample.position);
@@ -492,28 +565,51 @@ export const coralV4: OrganismGenerator = (scene, data) => {
       offset.rotateZ(-outwardTilt);
       branchRoot.add(offset);
 
-      // push the polyp's origin out to the branch surface along its own
-      // (now outward-pointing) local axis
-      offset.translateY(sample.radius);
-
+      offset.translateY(sample.radius * 1.05);
       offset.add(polyp);
     });
+
+    // Small nodules between polyps for a more organic branch surface.
+    const noduleCount = Math.min(10, Math.max(3, Math.round(branchLength * 2)));
+    for (let n = 0; n < noduleCount; n += 1) {
+      const noduleT = (n + 0.5) / noduleCount;
+      const sample = sampleAt(noduleT);
+      const noduleRadius = sample.radius * (0.55 + Math.random() * 0.35);
+      const nodule = new THREE.Mesh(
+        new THREE.SphereGeometry(noduleRadius, 8, 8),
+        branchMaterial,
+      );
+      const azimuth = Math.random() * Math.PI * 2;
+      const offset = new THREE.Object3D();
+      offset.position.copy(sample.position);
+      offset.quaternion.copy(sample.quaternion);
+      offset.rotateY(azimuth);
+      offset.rotateZ(-(0.35 + Math.random() * 0.25));
+      branchRoot.add(offset);
+      offset.translateY(sample.radius * 0.92);
+      offset.add(nodule);
+    }
   });
 
   // ========== 4. Cleanup ==========
   const cleanup = () => {
     scene.remove(coral);
+    const materials = new Set<THREE.Material>([
+      trunkBaseMaterial,
+      trunkMidMaterial,
+      trunkTipMaterial,
+      ...branchMaterials,
+      ...polypMaterialCache.values(),
+    ]);
+
     coral.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         const mesh = obj as THREE.Mesh;
         mesh.geometry.dispose();
-        if (Array.isArray(mesh.material)) {
-          mesh.material.forEach((m) => m.dispose());
-        } else {
-          mesh.material.dispose();
-        }
       }
     });
+
+    materials.forEach((material) => material.dispose());
   };
 
   return { coral, cleanup };
