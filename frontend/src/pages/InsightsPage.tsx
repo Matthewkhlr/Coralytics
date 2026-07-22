@@ -3,7 +3,7 @@ import { AnalysisSnapshotBar } from "@/components/AnalysisSnapshotBar";
 import { DataStatusBanner } from "@/components/DataStatusBanner";
 import { OlderSnapshotBanner } from "@/components/OlderSnapshotBanner";
 import { PageLoadingOverlay } from "@/components/PageLoadingOverlay";
-import { OceanPageFrame, PageDescription, PageHeader, PageTitle } from "@/components/PageShell";
+import { OceanPageFrame, PageHeader, PageTitle } from "@/components/PageShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSelectedAnalysis } from "@/hooks/useSelectedAnalysis";
 import { formatPlatform, formatShortDate } from "@/lib/format";
@@ -230,11 +230,7 @@ export function InsightsPage() {
 
       <PageLoadingOverlay loading={isPageLoading} className="min-h-[60vh]">
       <PageHeader>
-        <PageTitle>What your reef is telling you.</PageTitle>
-        <PageDescription>
-          A plain-English breakdown of your online persona, topics people associate with you, how
-          sentiment has shifted, and which posts may need attention.
-        </PageDescription>
+        <PageTitle>Your Profile Breakdown</PageTitle>
       </PageHeader>
 
       <AnalysisSnapshotBar

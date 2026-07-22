@@ -3,6 +3,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AppShell } from "./components/AppShell";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { UploadFlowProvider } from "./contexts/UploadFlowContext";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { LandingPage } from "./pages/LandingPage";
 import { UploadPage } from "./pages/UploadPage";
@@ -22,11 +23,13 @@ export function App() {
               <Route path="/view/:token" element={<RecruiterViewPage />} />
 
               <Route element={<AppShell />}>
-                <Route path="/" element={<LandingPage />} />
-                <Route element={<ProtectedRoute />}>
-                  <Route path="/upload" element={<UploadPage />} />
-                  <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/insights" element={<InsightsPage />} />
+                <Route element={<UploadFlowProvider />}>
+                  <Route path="/" element={<LandingPage />} />
+                  <Route element={<ProtectedRoute />}>
+                    <Route path="/upload" element={<UploadPage />} />
+                    <Route path="/dashboard" element={<DashboardPage />} />
+                    <Route path="/insights" element={<InsightsPage />} />
+                  </Route>
                 </Route>
               </Route>
 

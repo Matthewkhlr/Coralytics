@@ -32,6 +32,7 @@ import {
   validateUsername,
 } from "../lib/usernames";
 import { clearCachedProfile, writeCachedProfile } from "../lib/profileCache";
+import { invalidateUploadFlowSession } from "../lib/uploadFlowSession";
 import { invalidateUploadsCache } from "../lib/uploadsCache";
 
 type AuthContextValue = {
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearCachedProfile();
         invalidateAnalysisCache();
         invalidateUploadsCache();
+        invalidateUploadFlowSession();
       }
       setUser(nextUser);
       setLoading(false);

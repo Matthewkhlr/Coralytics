@@ -15,6 +15,7 @@ import { Check, FilePlus2, GripVertical, Info, LoaderCircle, Trash2 } from "luci
 import { ApiError, analyzeUploads, updateUploadPlatform, uploadExport } from "@/api/client";
 import type { Upload } from "@/api/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUploadFlow, type DraftFile } from "@/contexts/UploadFlowContext";
 import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
 import { useUploads } from "@/hooks/useUploads";
 import { OceanPageFrame, PageHeader, PageTitle, SectionTitle } from "@/components/PageShell";
@@ -26,6 +27,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cacheAnalysis, invalidateAnalysisCache } from "@/lib/analysisCache";
 import { LANDING_BUTTON } from "@/lib/buttonStyles";
 import { formatPlatform } from "@/lib/format";
+import { cacheUploadFlowDrafts } from "@/lib/uploadFlowDraftCache";
 import { cn } from "@/lib/utils";
 
 const PLATFORMS = [
@@ -35,13 +37,6 @@ const PLATFORMS = [
 ] as const;
 
 type SocialPlatform = (typeof PLATFORMS)[number]["key"];
-
-type DraftFile = {
-  id: string;
-  file: File;
-  contentHash: string;
-  error?: string;
-};
 
 const ALLOWED_EXT = new Set(["json", "txt", "csv", "zip"]);
 
@@ -106,6 +101,22 @@ const UPLOAD_STEP_TONES = {
 
 const UPLOAD_FILE_HELP =
   "Supported sources: Instagram, LinkedIn, Reddit.\nSupported formats: .zip, .json, .csv, .txt.";
+
+const METADATA_ONLY_ERROR = "Personal metadata only";
+const UNSUPPORTED_SOURCE_ERROR = "Unsupported source";
+
+function isMetadataOnlyError(message: string | undefined): boolean {
+  return message?.trim() === METADATA_ONLY_ERROR;
+}
+
+function isUnsupportedSourceError(message: string | undefined): boolean {
+  return message?.trim() === UNSUPPORTED_SOURCE_ERROR;
+}
+
+/** Hide ingest rejections that are already shown inline or in the unsupported-files list. */
+function isInlineIngestError(message: string | undefined): boolean {
+  return isMetadataOnlyError(message) || isUnsupportedSourceError(message);
+}
 
 /** Fallback until the upload flow baseline height is measured. */
 const RUNS_PANEL_FALLBACK_PX = 640;
@@ -346,19 +357,24 @@ function DraftFileRow({
   row,
   saving,
   onRemove,
+  showReason = false,
 }: {
   row: DraftFile;
   saving: boolean;
   onRemove: (id: string) => void;
+  showReason?: boolean;
 }) {
+  const reason =
+    row.error && (showReason || !isMetadataOnlyError(row.error)) ? row.error : null;
+
   return (
     <li className="inline-flex w-64 max-w-full items-center gap-1.5 rounded-[10px] border border-foreground/20 bg-background/80 py-1 pl-3 pr-1">
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm leading-[1.65] text-foreground/95" title={row.file.name}>
           {row.file.name}
         </p>
-        {row.error ? (
-          <p className="break-words text-xs text-primary">{row.error}</p>
+        {reason ? (
+          <p className="break-words text-xs text-primary">{reason}</p>
         ) : null}
       </div>
       <Button
@@ -394,7 +410,13 @@ function UnsupportedFilesList({
       <p className="text-sm font-bold leading-[1.65] text-foreground/95">Unsupported files, please delete them</p>
       <ul className="flex flex-wrap gap-2">
         {rows.map((row) => (
-          <DraftFileRow key={row.id} row={row} saving={saving} onRemove={onRemove} />
+          <DraftFileRow
+            key={row.id}
+            row={row}
+            saving={saving}
+            onRemove={onRemove}
+            showReason
+          />
         ))}
       </ul>
     </div>
@@ -541,18 +563,30 @@ export function UploadPage() {
 
   const history = useAnalysisHistory(user?.uid);
   const uploadsState = useUploads(user?.uid);
-  const [draft, setDraft] = useState<DraftFile[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [progress, setProgress] = useState<string | null>(null);
-  const [reviewUploads, setReviewUploads] = useState<Upload[] | null>(null);
-  const [runName, setRunName] = useState("");
-  const [activeStep, setActiveStep] = useState(1);
-  const [updatingPlatformId, setUpdatingPlatformId] = useState<string | null>(null);
-  /** After Ingest, hide the dropzone until the user chooses Back. */
-  const [uploadOpen, setUploadOpen] = useState(true);
-  const [completedAnalysisId, setCompletedAnalysisId] = useState<string | null>(null);
-  const uploadDraftSnapshotRef = useRef<DraftFile[]>([]);
+  const {
+    draft,
+    setDraft,
+    error,
+    setError,
+    saving,
+    setSaving,
+    progress,
+    setProgress,
+    reviewUploads,
+    setReviewUploads,
+    runName,
+    setRunName,
+    activeStep,
+    setActiveStep,
+    updatingPlatformId,
+    setUpdatingPlatformId,
+    uploadOpen,
+    setUploadOpen,
+    completedAnalysisId,
+    setCompletedAnalysisId,
+    uploadDraftSnapshotRef,
+    resetUploadFlow,
+  } = useUploadFlow();
   const uploadFlowRef = useRef<HTMLDivElement>(null);
   const lockedRunsPanelHeightRef = useRef<number | null>(readStoredRunsPanelHeight());
   const [lockedRunsPanelHeight, setLockedRunsPanelHeight] = useState<number | null>(
@@ -600,11 +634,17 @@ export function UploadPage() {
       }
 
       if (nextRows.length) {
-        setDraft((prev) => [...prev, ...nextRows]);
+        setDraft((prev) => {
+          const next = [...prev, ...nextRows];
+          if (user?.uid) {
+            cacheUploadFlowDrafts(user.uid, next, uploadDraftSnapshotRef.current);
+          }
+          return next;
+        });
         setError(null);
       }
     },
-    [draft, idPrefix],
+    [draft, idPrefix, user?.uid],
   );
 
   const knownUploads = mergeUploads(reviewUploads ?? [], uploadsState.uploads);
@@ -664,18 +704,6 @@ export function UploadPage() {
     await uploadsState.reload();
   };
 
-  const resetUploadFlow = () => {
-    setDraft([]);
-    setReviewUploads(null);
-    setRunName("");
-    setUploadOpen(true);
-    setError(null);
-    setProgress(null);
-    setCompletedAnalysisId(null);
-    uploadDraftSnapshotRef.current = [];
-    setActiveStep(1);
-  };
-
   const viewCoral = () => {
     if (completedAnalysisId) {
       navigate(`/dashboard?run=${encodeURIComponent(completedAnalysisId)}`, {
@@ -702,18 +730,17 @@ export function UploadPage() {
       (row) => !row.error && !isAlreadySaved(row.contentHash, knownUploads),
     );
     if (toIngest.length === 0) {
-      const failed = draft.filter((row) => row.error);
+      const failed = draft.filter((row) => Boolean(row.error));
       setDraft(failed);
       setUploadOpen(false);
       setError(null);
       return;
     }
 
-    setUploadOpen(false);
     setSaving(true);
     setError(null);
     let succeeded: Upload[] = [...(reviewUploads ?? [])];
-    const failed: DraftFile[] = [];
+    let nextDraft = [...draft];
 
     try {
       for (let i = 0; i < toIngest.length; i++) {
@@ -721,6 +748,7 @@ export function UploadPage() {
         const existing = findUploadByHash(row.contentHash, knownUploads);
         if (existing) {
           succeeded = mergeUploads(succeeded, [existing]);
+          nextDraft = nextDraft.filter((item) => item.id !== row.id);
           continue;
         }
 
@@ -730,18 +758,34 @@ export function UploadPage() {
             runAnalysis: false,
           });
           succeeded = mergeUploads(succeeded, [result]);
+          nextDraft = nextDraft.filter((item) => item.id !== row.id);
         } catch (err) {
           const message =
             err instanceof ApiError || err instanceof Error ? err.message : "Upload failed.";
-          failed.push({ ...row, error: message });
+          if (isMetadataOnlyError(message) || isUnsupportedSourceError(message)) {
+            nextDraft = nextDraft.map((item) =>
+              item.id === row.id ? { ...item, error: message } : item,
+            );
+            continue;
+          }
+          nextDraft = nextDraft.map((item) =>
+            item.id === row.id ? { ...item, error: message } : item,
+          );
           setError(message);
         }
       }
 
-      setDraft(failed);
+      const unsupportedAfterIngest = nextDraft.filter((row) => Boolean(row.error));
+
+      setDraft(nextDraft);
+      setError((current) => (current && isInlineIngestError(current) ? null : current));
       if (succeeded.length) {
         setReviewUploads(succeeded);
         await uploadsState.reload();
+      }
+      if (succeeded.length || unsupportedAfterIngest.length) {
+        setUploadOpen(false);
+        setError(null);
       }
     } finally {
       setSaving(false);
@@ -768,6 +812,9 @@ export function UploadPage() {
     setDraft((prev) => {
       const next = prev.filter((item) => item.id !== id);
       uploadDraftSnapshotRef.current = uploadDraftSnapshotRef.current.filter((item) => item.id !== id);
+      if (user?.uid) {
+        cacheUploadFlowDrafts(user.uid, next, uploadDraftSnapshotRef.current);
+      }
       if (!next.some((item) => item.error)) {
         setError(null);
       }
@@ -776,8 +823,9 @@ export function UploadPage() {
   };
 
   const formatError = error?.startsWith("Unsupported format") ? error : null;
-  const flowError = error && !formatError ? error : null;
-  const hasUnsupportedFiles = draft.some((row) => Boolean(row.error));
+  const flowError =
+    error && !formatError && !isInlineIngestError(error) ? error : null;
+  const hasUnsupportedFiles = unsupportedDraft.length > 0;
   const hasSupportedUploads = supportedUploads.length > 0;
   const hasIngested = hasSupportedUploads;
   const runFinished = activeStep >= 4 || Boolean(completedAnalysisId);
@@ -877,6 +925,11 @@ export function UploadPage() {
                 <AlertDescription role="alert">{formatError}</AlertDescription>
               </Alert>
             ) : null}
+            {flowError && uploadOpen ? (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription role="alert">{flowError}</AlertDescription>
+              </Alert>
+            ) : null}
 
             {uploadOpen ? (
               <>
@@ -905,9 +958,10 @@ export function UploadPage() {
                         variant="outline"
                         className={LANDING_BUTTON}
                         disabled={saving || hasUnsupportedFiles}
+                        aria-busy={saving}
                         onClick={() => void handleIngest()}
                       >
-                        Ingest
+                        {saving ? "Ingesting…" : "Ingest"}
                       </Button>
                     </div>
                   </div>
