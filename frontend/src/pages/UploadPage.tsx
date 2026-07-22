@@ -25,7 +25,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cacheAnalysis, invalidateAnalysisCache } from "@/lib/analysisCache";
-import { LANDING_BUTTON } from "@/lib/buttonStyles";
+import { invalidateUploadsCache } from "@/lib/uploadsCache";
+import { LANDING_BUTTON, UPLOAD_CHIP } from "@/lib/buttonStyles";
 import { formatPlatform } from "@/lib/format";
 import { cacheUploadFlowDrafts } from "@/lib/uploadFlowDraftCache";
 import { cn } from "@/lib/utils";
@@ -77,10 +78,6 @@ function cloneDraftForUpload(rows: DraftFile[]): DraftFile[] {
     ...row,
     error: undefined,
   }));
-}
-
-function isAlreadySaved(hash: string, uploads: Upload[]) {
-  return uploads.some((upload) => upload.content_hash === hash);
 }
 
 function defaultRunName(when = new Date()) {
@@ -338,7 +335,7 @@ function SavedFilesList({ uploads }: { uploads: Upload[] }) {
         {uploads.map((upload) => (
           <li
             key={upload.upload_id}
-            className="inline-flex w-64 max-w-full items-center rounded-[10px] border border-foreground/20 bg-background/80 px-3 py-1.5"
+            className={cn("inline-flex w-64 max-w-full items-center px-3 py-1.5", UPLOAD_CHIP)}
           >
             <p
               className="truncate text-sm leading-[1.65] text-foreground/95"
@@ -368,7 +365,7 @@ function DraftFileRow({
     row.error && (showReason || !isMetadataOnlyError(row.error)) ? row.error : null;
 
   return (
-    <li className="inline-flex w-64 max-w-full items-center gap-1.5 rounded-[10px] border border-foreground/20 bg-background/80 py-1 pl-3 pr-1">
+    <li className={cn("inline-flex w-64 max-w-full items-center gap-1.5 py-1 pl-3 pr-1", UPLOAD_CHIP)}>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm leading-[1.65] text-foreground/95" title={row.file.name}>
           {row.file.name}
@@ -440,7 +437,8 @@ function SourceChip({
         event.dataTransfer.effectAllowed = "move";
       }}
       className={cn(
-        "flex items-center gap-2 rounded-[10px] border border-foreground/20 bg-background/80 px-3 py-1.5",
+        "flex w-full items-center gap-2 px-3 py-1.5",
+        UPLOAD_CHIP,
         disabled || updating ? "opacity-60" : "cursor-grab active:cursor-grabbing",
       )}
     >
@@ -679,14 +677,19 @@ export function UploadPage() {
 
   const finishAnalyze = async () => {
     if (!user) return;
+    const uploadIds = (reviewUploads ?? [])
+      .map((upload) => upload.upload_id)
+      .filter((id): id is string => Boolean(id));
     setProgress("Analysing…");
     const analysis = await analyzeUploads({
       user_id: user.uid,
       persist: true,
       name: runName.trim() || undefined,
+      ...(uploadIds.length ? { upload_ids: uploadIds } : {}),
     });
 
     invalidateAnalysisCache(user.uid);
+    invalidateUploadsCache(user.uid);
     cacheAnalysis(analysis);
 
     // Advance to step 4 before any await so step 3 never paints with a blank name.
@@ -707,7 +710,7 @@ export function UploadPage() {
   const viewCoral = () => {
     if (completedAnalysisId) {
       navigate(`/dashboard?run=${encodeURIComponent(completedAnalysisId)}`, {
-        state: { analysisId: completedAnalysisId, showDiff: true },
+        state: { analysisId: completedAnalysisId },
       });
       return;
     }
@@ -726,9 +729,7 @@ export function UploadPage() {
     if (!user || draft.length === 0) return;
 
     uploadDraftSnapshotRef.current = cloneDraftForUpload(draft);
-    const toIngest = draft.filter(
-      (row) => !row.error && !isAlreadySaved(row.contentHash, knownUploads),
-    );
+    const toIngest = draft.filter((row) => !row.error);
     if (toIngest.length === 0) {
       const failed = draft.filter((row) => Boolean(row.error));
       setDraft(failed);
@@ -1121,7 +1122,19 @@ export function UploadPage() {
         </div>
 
         <aside className="flex min-w-0 shrink-0 flex-col self-start lg:pl-2">
-          <MyRunsPanel history={history} panelHeight={runsPanelHeight} />
+          <MyRunsPanel
+            history={history}
+            userId={user?.uid}
+            onRunDeleted={async () => {
+              if (user?.uid) {
+                invalidateAnalysisCache(user.uid);
+                invalidateUploadsCache(user.uid);
+              }
+              await history.reload();
+              await uploadsState.reload();
+            }}
+            panelHeight={runsPanelHeight}
+          />
         </aside>
       </div>
     </UploadPageFrame>

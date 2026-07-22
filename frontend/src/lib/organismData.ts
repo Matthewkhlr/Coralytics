@@ -1,15 +1,22 @@
 import type {
   OrganismData,
   OrganismPost,
+  OrganismPostType,
   OrganismTopic,
 } from "../three/organismTypes";
-import type { AnalysisDiff, PostInsight } from "../api/types";
+import type { AnalysisDiff, PostInsight, PostSummary } from "../api/types";
 
 export const SAMPLE_ORGANISM_DATA: OrganismData = {
   accountAgeDays: 0,
   topics: [],
   posts: [],
 };
+
+export const EMPTY_ORGANISM_DATA: OrganismData = SAMPLE_ORGANISM_DATA;
+
+export function isOrganismEmpty(data: OrganismData): boolean {
+  return data.topics.length === 0 && (data.posts?.length ?? 0) === 0;
+}
 
 function parseTopic(raw: unknown): OrganismTopic | null {
   if (!raw || typeof raw !== "object") return null;
@@ -29,7 +36,58 @@ function parseTopic(raw: unknown): OrganismTopic | null {
 
   const sentiment = typeof topic.sentiment === "number" ? topic.sentiment : 0;
 
-  return { name, postVolume, sentiment };
+  const avgEngagement =
+    typeof topic.avgEngagement === "number" ? topic.avgEngagement : null;
+
+  const commentVolume =
+    typeof topic.commentVolume === "number" ? topic.commentVolume : undefined;
+
+  return { name, postVolume, sentiment, avgEngagement, commentVolume };
+}
+
+function parsePostType(raw: unknown): OrganismPostType | undefined {
+  if (
+    raw === "post" ||
+    raw === "comment" ||
+    raw === "reply" ||
+    raw === "share" ||
+    raw === "unknown"
+  ) {
+    return raw;
+  }
+  return undefined;
+}
+
+function parseSentimentLabel(
+  raw: unknown,
+): "positive" | "neutral" | "negative" | undefined {
+  if (raw === "positive" || raw === "neutral" || raw === "negative") {
+    return raw;
+  }
+  return undefined;
+}
+
+function buildEngagementNormMap(posts: OrganismPost[]): Map<string, number | null> {
+  const engagements = posts
+    .map((post) => post.engagement)
+    .filter((value): value is number => typeof value === "number" && value >= 0);
+  if (!engagements.length) return new Map();
+
+  const max = Math.max(...engagements);
+  const logMax = Math.log1p(max);
+  const map = new Map<string, number | null>();
+  for (const post of posts) {
+    if (
+      typeof post.engagement !== "number" ||
+      post.engagement < 0 ||
+      logMax <= 0
+    ) {
+      map.set(post.id, null);
+      continue;
+    }
+    map.set(post.id, Math.round((Math.log1p(post.engagement) / logMax) * 10000) / 10000);
+  }
+  return map;
 }
 
 function parsePost(raw: unknown): OrganismPost | null {
@@ -42,12 +100,7 @@ function parsePost(raw: unknown): OrganismPost | null {
   const created_at =
     typeof post.created_at === "string" ? post.created_at : null;
 
-  const sentiment_label =
-    post.sentiment_label === "positive" ||
-    post.sentiment_label === "neutral" ||
-    post.sentiment_label === "negative"
-      ? post.sentiment_label
-      : undefined;
+  const sentiment_label = parseSentimentLabel(post.sentiment_label);
 
   const sentiment_compound =
     typeof post.sentiment_compound === "number"
@@ -58,7 +111,32 @@ function parsePost(raw: unknown): OrganismPost | null {
     ? post.topics.filter((topic): topic is string => typeof topic === "string")
     : undefined;
 
-  return { id, created_at, sentiment_label, sentiment_compound, topics };
+  const post_type = parsePostType(post.post_type);
+
+  const engagement =
+    typeof post.engagement === "number"
+      ? post.engagement
+      : post.engagement === null
+        ? null
+        : undefined;
+
+  const engagementNorm =
+    typeof post.engagementNorm === "number"
+      ? post.engagementNorm
+      : post.engagementNorm === null
+        ? null
+        : undefined;
+
+  return {
+    id,
+    created_at,
+    sentiment_label,
+    sentiment_compound,
+    topics,
+    post_type,
+    engagement,
+    engagementNorm,
+  };
 }
 
 export function parseOrganismData(raw: unknown): OrganismData | null {
@@ -85,7 +163,7 @@ export function parseOrganismData(raw: unknown): OrganismData | null {
   return { accountAgeDays, topics, posts };
 }
 
-export type OrganismSource = "analysis" | "sample";
+export type OrganismSource = "analysis" | "sample" | "empty";
 
 export function resolveOrganismData(
   raw: unknown,
@@ -94,7 +172,7 @@ export function resolveOrganismData(
   if (parsed) {
     return { data: parsed, source: "analysis" };
   }
-  return { data: SAMPLE_ORGANISM_DATA, source: "sample" };
+  return { data: EMPTY_ORGANISM_DATA, source: "empty" };
 }
 
 function accountAgeDaysFromInsights(insights: PostInsight[]): number {
@@ -109,29 +187,55 @@ function accountAgeDaysFromInsights(insights: PostInsight[]): number {
   );
 }
 
-/** Rebuild organism topics from post_insights filtered to one platform. */
-export function organismDataForPlatform(
+/** Pasted / manual demo posts (generic JSON), not a social export upload. */
+export function isPastedSamplePlatform(platform?: string | null): boolean {
+  return (platform ?? "").toLowerCase() === "sample";
+}
+
+function insightsToOrganismPosts(filtered: PostInsight[]): OrganismPost[] {
+  const base: OrganismPost[] = filtered
+    .filter((item): item is PostInsight & { id: string } => Boolean(item.id))
+    .map((item) => ({
+      id: item.id,
+      created_at: item.created_at ?? null,
+      sentiment_label: parseSentimentLabel(item.sentiment_label),
+      sentiment_compound: item.sentiment_compound,
+      topics: item.topics,
+      post_type: parsePostType(item.post_type),
+      engagement:
+        typeof item.engagement === "number"
+          ? item.engagement
+          : item.engagement === null
+            ? null
+            : undefined,
+    }));
+
+  const normMap = buildEngagementNormMap(base);
+  return base.map((post) => ({
+    ...post,
+    engagementNorm: normMap.get(post.id) ?? null,
+  }));
+}
+
+const COMMENT_POST_TYPES = new Set(["comment", "reply"]);
+
+function buildOrganismFromInsights(
   base: OrganismData,
-  insights: PostInsight[] | undefined,
-  platform: string | null,
-  topN = 3,
+  filtered: PostInsight[],
+  topN: number,
 ): OrganismData {
-  if (!platform || !insights?.length) return base;
-
-  const platformLower = platform.toLowerCase();
-  const filtered = insights.filter(
-    (item) => (item.platform || "").toLowerCase() === platformLower,
-  );
-  if (!filtered.length) {
-    return { accountAgeDays: base.accountAgeDays, topics: [], posts: [] };
-  }
-
   const volume = new Map<string, number>();
   const compounds = new Map<string, number[]>();
+  const engagements = new Map<string, number[]>();
+  const commentVolume = new Map<string, number>();
 
   for (const post of filtered) {
     const compound =
       typeof post.sentiment_compound === "number" ? post.sentiment_compound : 0;
+    const postType = (post.post_type || "").toLowerCase();
+    const engagement =
+      typeof post.engagement === "number" ? post.engagement : null;
+
     for (const topic of post.topics || []) {
       const name = String(topic).trim();
       if (!name) continue;
@@ -139,6 +243,14 @@ export function organismDataForPlatform(
       const list = compounds.get(name) || [];
       list.push(compound);
       compounds.set(name, list);
+      if (engagement !== null) {
+        const engList = engagements.get(name) || [];
+        engList.push(engagement);
+        engagements.set(name, engList);
+      }
+      if (COMMENT_POST_TYPES.has(postType)) {
+        commentVolume.set(name, (commentVolume.get(name) || 0) + 1);
+      }
     }
   }
 
@@ -151,29 +263,89 @@ export function organismDataForPlatform(
         scores.length > 0
           ? scores.reduce((sum, n) => sum + n, 0) / scores.length
           : 0;
-      return { name, postVolume, sentiment };
+      const topicEngagements = engagements.get(name) || [];
+      const avgEngagement =
+        topicEngagements.length > 0
+          ? Math.round(
+              (topicEngagements.reduce((sum, n) => sum + n, 0) /
+                topicEngagements.length) *
+                100,
+            ) / 100
+          : null;
+      return {
+        name,
+        postVolume,
+        sentiment,
+        avgEngagement,
+        commentVolume: commentVolume.get(name) || 0,
+      };
     });
 
   return {
     accountAgeDays: accountAgeDaysFromInsights(filtered) || base.accountAgeDays,
     topics,
-    posts: filtered
-      .filter(
-        (item): item is PostInsight & { id: string } => Boolean(item.id),
-      )
-      .map((item) => ({
-        id: item.id,
-        created_at: item.created_at ?? null,
-        sentiment_label:
-          item.sentiment_label === "positive" ||
-          item.sentiment_label === "neutral" ||
-          item.sentiment_label === "negative"
-            ? item.sentiment_label
-            : undefined,
-        sentiment_compound: item.sentiment_compound,
-        topics: item.topics,
-      })),
+    posts: insightsToOrganismPosts(filtered),
   };
+}
+
+/** Rebuild organism from post_insights — real uploads only (excludes pasted sample). */
+export function organismDataForPlatform(
+  base: OrganismData,
+  insights: PostInsight[] | undefined,
+  platform: string | null,
+  topN = 3,
+): OrganismData {
+  if (!insights?.length) return base;
+
+  let filtered = insights.filter((item) => !isPastedSamplePlatform(item.platform));
+
+  if (platform) {
+    const platformLower = platform.toLowerCase();
+    filtered = filtered.filter(
+      (item) => (item.platform || "").toLowerCase() === platformLower,
+    );
+  }
+
+  if (!filtered.length) {
+    return { accountAgeDays: base.accountAgeDays, topics: [], posts: [] };
+  }
+
+  return buildOrganismFromInsights(base, filtered, topN);
+}
+
+/** All posts for a topic from the analysis snapshot (every upload in that run). */
+export function postsForTopic(
+  insights: PostInsight[] | undefined,
+  topic: string,
+  platform?: string | null,
+): PostSummary[] {
+  if (!insights?.length || !topic.trim()) return [];
+
+  const topicLower = topic.toLowerCase().trim();
+  const platformLower = platform?.toLowerCase().trim();
+
+  return insights
+    .filter((post) => {
+      if (isPastedSamplePlatform(post.platform)) return false;
+      if (platformLower && (post.platform ?? "").toLowerCase() !== platformLower) {
+        return false;
+      }
+      return (post.topics ?? []).some((name) => name.toLowerCase() === topicLower);
+    })
+    .map((post) => ({
+      id: post.id,
+      platform: post.platform,
+      content: post.content,
+      created_at: post.created_at,
+      sentiment_compound: post.sentiment_compound,
+      topics: post.topics,
+      post_type: post.post_type,
+    }))
+    .sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tb - ta;
+    });
 }
 
 export function formatAnalysisDiff(

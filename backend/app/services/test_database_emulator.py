@@ -164,6 +164,61 @@ class DatabaseEmulatorTest(unittest.TestCase):
 
         analysis_store_service.delete_analysis(self.user_id, saved["analysis_id"])
 
+    def test_delete_analysis_cleans_orphaned_uploads(self) -> None:
+        from app.services import analysis_store_service, firestore_service, raw_data_service
+
+        raw_files = [
+            {
+                "path": "posts.json",
+                "content_type": "application/json",
+                "size_bytes": 20,
+                "content": "[]",
+            }
+        ]
+        posts = [
+            {
+                "id": "instagram:orphan",
+                "platform": "instagram",
+                "content": "old post",
+                "created_at": "2024-01-01T00:00:00+00:00",
+                "post_type": "post",
+                "hashtags": [],
+            }
+        ]
+        upload = firestore_service.save_upload_with_posts(
+            user_id=self.user_id,
+            filename="export.zip",
+            posts=posts,
+            platform="instagram",
+            ingest_report={"total_posts": 1},
+            raw_files=raw_files,
+            content_hash=f"orphan-{os.getpid()}",
+            original_bytes=b"orphan-bytes",
+        )
+        saved = analysis_store_service.save_analysis(
+            self.user_id,
+            {
+                "name": "run",
+                "post_count": 1,
+                "sentiment_summary": {"compound": 0.1},
+                "topics": [],
+                "organism_data": {"accountAgeDays": 1, "topics": [], "posts": []},
+                "post_insights": [],
+            },
+            upload_ids=[upload["upload_id"]],
+        )
+
+        result = analysis_store_service.delete_analysis(
+            self.user_id, saved["analysis_id"]
+        )
+        self.assertTrue(result["deleted"])
+        self.assertIn(upload["upload_id"], result.get("removed_upload_ids", []))
+
+        listed = raw_data_service.list_raw_uploads(self.user_id, include_non_ready=True)
+        self.assertFalse(
+            any(row["upload_id"] == upload["upload_id"] for row in listed)
+        )
+
     def test_migration_dry_run_and_apply(self) -> None:
         from app.services import migration_service, raw_data_service
 

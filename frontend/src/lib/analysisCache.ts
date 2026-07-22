@@ -117,6 +117,36 @@ export function cacheAnalysis(analysis: Analysis) {
   }
 }
 
+export function removeAnalysisFromCache(userId: string, analysisId: string) {
+  const key = analysisKey(userId, analysisId);
+  analysisCache.delete(key);
+  analysisInflight.delete(key);
+
+  try {
+    sessionStorage.removeItem(storageKey("item", key));
+  } catch {
+    /* ignore */
+  }
+
+  const list = hydrateList(userId);
+  if (!list) return;
+
+  const analyses = list.analyses.filter((item) => item.analysis_id !== analysisId);
+  if (!analyses.length) {
+    listCache.delete(userId);
+    try {
+      sessionStorage.removeItem(storageKey("list", userId));
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  const next: ListEntry = { analyses, fetchedAt: Date.now() };
+  listCache.set(userId, next);
+  writeStorage(storageKey("list", userId), next);
+}
+
 export function invalidateAnalysisCache(userId?: string) {
   if (!userId) {
     listCache.clear();

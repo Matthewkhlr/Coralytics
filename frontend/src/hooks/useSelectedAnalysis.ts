@@ -31,13 +31,15 @@ export function useSelectedAnalysis(
   const latestAnalysis = latest.analysis;
 
   const selectedAnalysisId = useMemo(() => {
+    if (analyses.length === 0) return null;
+
     const candidates = [runFromUrl, navState.analysisId, latestAnalysis?.analysis_id].filter(
       Boolean,
     ) as string[];
     for (const id of candidates) {
       if (analyses.some((a) => a.analysis_id === id)) return id;
     }
-    return latestAnalysis?.analysis_id ?? null;
+    return analyses[0]?.analysis_id ?? null;
   }, [runFromUrl, navState.analysisId, latestAnalysis?.analysis_id, analyses]);
 
   const [selectedAnalysis, setSelectedAnalysis] = useState<Analysis | null>(null);
@@ -83,20 +85,17 @@ export function useSelectedAnalysis(
       return;
     }
 
-    if (latestAnalysis?.analysis_id === selectedAnalysisId) {
-      setSelectedAnalysis(latestAnalysis);
-      return;
-    }
+    const fromLatest =
+      latestAnalysis?.analysis_id === selectedAnalysisId ? latestAnalysis : null;
+    const fromHistory = analyses.find((a) => a.analysis_id === selectedAnalysisId) ?? null;
+    const cached = fromLatest ?? fromHistory;
 
-    const fromHistory = analyses.find((a) => a.analysis_id === selectedAnalysisId);
-    if (fromHistory) {
-      const hasOrganism = Boolean(fromHistory.organism_data);
-      const hasInsights =
-        !requirePostInsights || Boolean(fromHistory.post_insights?.length);
-      if (hasOrganism && hasInsights) {
-        setSelectedAnalysis(fromHistory);
-        return;
-      }
+    const hasCachedInsights = Boolean(cached?.post_insights?.length);
+    const canUseCache = cached && (!requirePostInsights || hasCachedInsights);
+
+    if (canUseCache) {
+      setSelectedAnalysis(cached);
+      return;
     }
 
     let cancelled = false;
@@ -117,7 +116,14 @@ export function useSelectedAnalysis(
     };
   }, [userId, selectedAnalysisId, latestAnalysis, analyses, requirePostInsights]);
 
-  const analysis = selectedAnalysis ?? latestAnalysis;
+  const analysis = useMemo(() => {
+    if (history.status === "empty" || analyses.length === 0) return null;
+
+    const candidate = selectedAnalysis ?? latestAnalysis;
+    if (!candidate) return null;
+    if (!analyses.some((item) => item.analysis_id === candidate.analysis_id)) return null;
+    return candidate;
+  }, [history.status, analyses, selectedAnalysis, latestAnalysis]);
   const isLatest = Boolean(
     analysis && latestAnalysis && analysis.analysis_id === latestAnalysis.analysis_id,
   );

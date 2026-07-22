@@ -7,15 +7,21 @@ import {
   ChevronRight,
   FileText,
   Info,
+  LoaderCircle,
   Share2,
   Smile,
   X,
 } from "lucide-react";
+import { ExhibitSectionLabel } from "@/components/PageShell";
+import { deleteAnalysis } from "@/api/client";
 import type { Analysis } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AnalysisHistoryState } from "@/hooks/useAnalysisHistory";
-import { LANDING_BUTTON, LANDING_BUTTON_SM } from "@/lib/buttonStyles";
+import { removeAnalysisFromCache } from "@/lib/analysisCache";
+import { invalidateUploadsCache } from "@/lib/uploadsCache";
+import { formatApiError } from "@/lib/apiError";
+import { LANDING_BUTTON, LANDING_BUTTON_SM, MY_RUNS_PANEL } from "@/lib/buttonStyles";
 import { formatRunLabel, formatShortDate } from "@/lib/format";
 import { formatAnalysisDiff } from "@/lib/organismData";
 import { resolveRunScope } from "@/lib/runScope";
@@ -31,6 +37,8 @@ import { cn } from "@/lib/utils";
 
 const ROW_HEIGHT_PX = 52;
 const LATEST_COLOR = "text-coral";
+const DELETE_BUTTON =
+  "h-auto rounded-none border-coral/55 bg-coral/12 px-3 py-3 text-[11px] font-medium uppercase tracking-[0.18em] text-coral backdrop-blur-md hover:bg-coral/22 hover:border-coral/75 disabled:pointer-events-none disabled:opacity-50";
 
 function formatMonthYear(iso: string | null | undefined) {
   if (!iso) return null;
@@ -95,7 +103,7 @@ function DialogPanel({
   return (
     <div
       className={cn(
-        "border rounded-lg px-4 py-3",
+        "border rounded-none px-4 py-3",
         status === "default" || !status
           ? "border-foreground/20 bg-background/40"
           : status === "info"
@@ -151,13 +159,20 @@ function RunDetailDialog({
   isLatest,
   open,
   onClose,
+  userId,
+  onDeleted,
 }: {
   analysis: Analysis;
   runNumber: number;
   isLatest: boolean;
   open: boolean;
   onClose: () => void;
+  userId?: string;
+  onDeleted?: () => void | Promise<void>;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const scope = resolveRunScope(analysis);
   const dashboardHref = `/dashboard?run=${encodeURIComponent(analysis.analysis_id)}`;
   const insightsHref = `/insights?run=${encodeURIComponent(analysis.analysis_id)}`;
@@ -183,6 +198,35 @@ function RunDetailDialog({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      setConfirmDelete(false);
+      setDeleting(false);
+      setDeleteError(null);
+    }
+  }, [open, analysis.analysis_id]);
+
+  const handleDelete = async () => {
+    if (!userId) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await deleteAnalysis(userId, analysis.analysis_id);
+      if (!result.deleted) {
+        setDeleteError("This run could not be deleted.");
+        return;
+      }
+      removeAnalysisFromCache(userId, analysis.analysis_id);
+      invalidateUploadsCache(userId);
+      await onDeleted?.();
+      onClose();
+    } catch (error) {
+      setDeleteError(formatApiError(error, "Failed to delete this run."));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   if (!open) return null;
 
@@ -278,7 +322,58 @@ function RunDetailDialog({
           </section>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 px-6 pb-6 pt-2">
+        {confirmDelete ? (
+          <div className="mx-6 mt-2 border border-coral/45 bg-coral/10 px-4 py-3">
+            <p className="text-sm leading-relaxed text-foreground/90">
+              Remove this snapshot? Exports used only by this run are removed. Deleting your
+              last run clears all uploads and posts.
+            </p>
+            {deleteError ? (
+              <p className="mt-2 text-xs text-coral">{deleteError}</p>
+            ) : null}
+            <div className="mt-3 flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(LANDING_BUTTON_SM, "flex-1 justify-center")}
+                disabled={deleting}
+                onClick={() => {
+                  setConfirmDelete(false);
+                  setDeleteError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(DELETE_BUTTON, "flex-1 justify-center")}
+                disabled={deleting || !userId}
+                onClick={() => void handleDelete()}
+              >
+                {deleting ? (
+                  <>
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                    Deleting…
+                  </>
+                ) : (
+                  "Confirm delete"
+                )}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-3 gap-2 px-6 pb-6 pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            className={cn(DELETE_BUTTON, "w-full justify-center")}
+            disabled={!userId || deleting}
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -306,11 +401,7 @@ function RunDetailDialog({
 }
 
 function SectionHeader({ title }: { title: string }) {
-  return (
-    <p className="mb-3 shrink-0 text-center text-caps font-medium text-muted-foreground">
-      {title}
-    </p>
-  );
+  return <ExhibitSectionLabel className="shrink-0">{title}</ExhibitSectionLabel>;
 }
 
 function RunStep({
@@ -356,12 +447,20 @@ function RunStep({
 
 type MyRunsPanelProps = {
   history: AnalysisHistoryState;
+  userId?: string;
+  onRunDeleted?: () => void | Promise<void>;
   className?: string;
   /** Fixed height — locked at Step 4 (View Your Coral); does not resize on Steps 1–3. */
   panelHeight: number;
 };
 
-export function MyRunsPanel({ history, className, panelHeight }: MyRunsPanelProps) {
+export function MyRunsPanel({
+  history,
+  userId,
+  onRunDeleted,
+  className,
+  panelHeight,
+}: MyRunsPanelProps) {
   const analyses = history.analyses;
   const runCount = analyses.length;
   const listRef = useRef<HTMLDivElement>(null);
@@ -408,7 +507,8 @@ export function MyRunsPanel({ history, className, panelHeight }: MyRunsPanelProp
     <>
       <aside
         className={cn(
-          "flex min-h-0 shrink-0 flex-col border border-foreground/20 bg-background/45 p-[22px] backdrop-blur-[10px]",
+          "flex min-h-0 shrink-0 flex-col p-[22px]",
+          MY_RUNS_PANEL,
           className,
         )}
         style={{ height: panelHeight, maxHeight: panelHeight }}
@@ -482,6 +582,8 @@ export function MyRunsPanel({ history, className, panelHeight }: MyRunsPanelProp
           runNumber={selected.runNumber}
           isLatest={selected.isLatest}
           open
+          userId={userId}
+          onDeleted={onRunDeleted}
           onClose={() => setSelected(null)}
         />
       ) : null}

@@ -18,6 +18,7 @@ from app.services import (
     firestore_service,
     ingestion_service,
     privacy_service,
+    reef_settings_service,
     seed_service,
     share_service,
     username_service,
@@ -36,11 +37,9 @@ class Post(BaseModel):
 
 class AnalysisRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
-    # CHANGED: posts/upload_ids are kept for backwards compatibility with
-    # any existing callers, but are no longer used -- /analyze now always
-    # analyzes the user's ENTIRE post history (see analysis_service.py).
-    # Left in place rather than removed so this isn't a breaking schema
-    # change for anyone already calling this endpoint.
+    # posts/upload_ids are kept for backwards compatibility with any existing
+    # callers. upload_ids scope the first analysis to the current upload batch;
+    # later runs analyze the user's full post history (see analysis_service.py).
     posts: list[Post] = Field(default_factory=list)
     upload_ids: list[str] = Field(default_factory=list)
     persist: bool = True
@@ -53,6 +52,15 @@ class PrivacySettingsRequest(BaseModel):
     include_post_excerpts_in_share: bool | None = None
     share_expiry_days: int | None = Field(default=None, ge=1, le=365)
     excluded_platforms: list[str] | None = None
+
+
+class ReefSettingsRequest(BaseModel):
+    show_rock: bool | None = None
+    show_fish: bool | None = None
+    water_color: str | None = Field(default=None, pattern="^#[0-9a-fA-F]{6}$")
+    sand_color: str | None = Field(default=None, pattern="^#[0-9a-fA-F]{6}$")
+    fish_color: str | None = Field(default=None, pattern="^#[0-9a-fA-F]{6}$")
+    rock_color: str | None = Field(default=None, pattern="^#[0-9a-fA-F]{6}$")
 
 
 class UploadPlatformUpdate(BaseModel):
@@ -463,6 +471,7 @@ def analyze_posts(
             payload.user_id,
             persist=payload.persist,
             name=payload.name,
+            upload_ids=payload.upload_ids or None,
         )
     except Exception as exc:
         message = str(exc)
@@ -544,6 +553,29 @@ def update_privacy_settings(
     updates = payload.model_dump(exclude_none=True)
     merged = {**current, **updates}
     return privacy_service.save_privacy_settings(user_id, merged)
+
+
+@app.get("/users/{user_id}/reef-settings")
+def get_reef_settings(
+    user_id: str,
+    _: Annotated[str, Depends(require_matching_user)],
+) -> dict[str, Any]:
+    return reef_settings_service.get_reef_settings(user_id)
+
+
+@app.put("/users/{user_id}/reef-settings")
+def update_reef_settings(
+    user_id: str,
+    payload: ReefSettingsRequest,
+    _: Annotated[str, Depends(require_matching_user)],
+) -> dict[str, Any]:
+    current = reef_settings_service.get_reef_settings(user_id)
+    updates = payload.model_dump(exclude_none=True)
+    merged = {**current, **updates}
+    try:
+        return reef_settings_service.save_reef_settings(user_id, merged)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/shares")

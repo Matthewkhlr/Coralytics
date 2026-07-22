@@ -217,7 +217,8 @@ export function InsightsPage() {
   const accountAgeDays = analysis?.organism_data?.accountAgeDays ?? organismData.accountAgeDays;
   const ageLabel = formatAge(accountAgeDays);
 
-  const isEmpty = !analysis && latestStatus !== "loading";
+  const isEmpty =
+    history.status === "empty" || (!analysis && latestStatus !== "loading" && !analysisLoading);
   const isPageLoading = latestStatus === "loading" || analysisLoading;
 
   return (

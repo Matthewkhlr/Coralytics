@@ -354,6 +354,29 @@ def save_privacy_settings(user_id: str, settings: dict[str, Any]) -> dict[str, A
     return serialize_record_for_api(record)
 
 
+def get_reef_settings(user_id: str) -> dict[str, Any]:
+    defaults = {
+        "show_rock": False,
+        "show_fish": False,
+        "water_color": "#041a2c",
+        "sand_color": "#0f2d42",
+        "fish_color": "#8ec8e0",
+        "rock_color": "#4a4540",
+    }
+    snapshot = _user_doc(user_id).collection("settings").document("reef").get()
+    if not snapshot.exists:
+        return defaults
+    data = snapshot.to_dict() or {}
+    return serialize_record_for_api({**defaults, **data})
+
+
+def save_reef_settings(user_id: str, settings: dict[str, Any]) -> dict[str, Any]:
+    now = encode_timestamp()
+    record = {**settings, "updated_at": now, "schema_version": SCHEMA_VERSION_V2}
+    _user_doc(user_id).collection("settings").document("reef").set(record, merge=True)
+    return serialize_record_for_api(record)
+
+
 def save_evolution_snapshot(user_id: str, analysis_id: str, snapshot: dict[str, Any]) -> None:
     record = {**snapshot, "schema_version": SCHEMA_VERSION_V2}
     if not record.get("created_at"):

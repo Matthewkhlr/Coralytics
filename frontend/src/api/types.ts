@@ -98,6 +98,8 @@ export type PostInsight = {
   sentiment_label?: string;
   sentiment_compound?: number;
   topics?: string[];
+  post_type?: string;
+  engagement?: number | null;
 };
 
 export type Analysis = {
@@ -168,6 +170,7 @@ export type AnalyzeRequest = {
   user_id: string;
   persist?: boolean;
   name?: string;
+  upload_ids?: string[];
 };
 
 export type PostSummary = {
@@ -177,6 +180,7 @@ export type PostSummary = {
   created_at?: string;
   sentiment_compound?: number;
   topics?: string[];
+  post_type?: string;
 };
 
 export type ShareRecord = {
@@ -192,4 +196,14 @@ export type CreateShareRequest = {
   user_id: string;
   analysis_id: string;
   expiry_days?: number;
+};
+
+export type ReefThemeSettingsApi = {
+  show_rock: boolean;
+  show_fish: boolean;
+  water_color?: string | null;
+  sand_color?: string | null;
+  fish_color?: string | null;
+  rock_color?: string | null;
+  updated_at?: string;
 };

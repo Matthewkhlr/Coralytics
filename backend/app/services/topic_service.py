@@ -26,6 +26,7 @@ Install:
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from typing import Any
 
@@ -66,9 +67,13 @@ TOPIC_TAXONOMY: dict[str, str] = {
     "finance": "finance money investing stock budget savings crypto "
                "market economy salary invest financial",
     "entertainment": "movie music concert show game entertainment film "
-                      "series artist album streaming celebrity",
-    "politics": "politics government election policy vote president law "
-                "rights protest senate campaign",
+                      "series artist album streaming celebrity vote fan "
+                      "idol kpop beauty contest faces award nomination "
+                      "fandom singer group band stan comeback chart "
+                      "most beautiful girls generation vote for",
+    "politics": "politics government election policy president law "
+                "rights protest senate campaign congress legislation "
+                "ballot polling voter democracy parliament partisan",
     "education": "education school university student learning study "
                  "degree class course exam professor",
     "sports": "sports team match game player league championship score "
@@ -104,6 +109,34 @@ def _topic_text(post: dict[str, Any]) -> str:
     return " ".join(part for part in parts if part).strip()
 
 
+_FAN_VOTE_RE = re.compile(
+    r"\bvote(?:d|s)?\s+for\b",
+    re.IGNORECASE,
+)
+_AWARD_OR_FAN_RE = re.compile(
+    r"(?:#\w*(?:face|award|idol|stan|kpop)\w*|@\w+|most\s+beautiful|fan\s*vote)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_fan_or_award_vote(text: str) -> bool:
+    """Fan/award voting ('I vote for @idol') is entertainment, not politics."""
+    if not text:
+        return False
+    if _FAN_VOTE_RE.search(text) and ("@" in text or "#" in text):
+        return True
+    return bool(_AWARD_OR_FAN_RE.search(text))
+
+
+def _filter_scored_topics(
+    scored_topics: list[tuple[str, float]],
+    text: str,
+) -> list[tuple[str, float]]:
+    if not _looks_like_fan_or_award_vote(text):
+        return scored_topics
+    return [(name, score) for name, score in scored_topics if name != "politics"]
+
+
 def assign_topics(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Assign up to MAX_TOPICS_PER_POST topics to each post.
 
@@ -132,10 +165,13 @@ def assign_topics(posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for index, post in enumerate(posts):
-        scored_topics = sorted(
-            zip(topic_names, similarity_matrix[index]),
-            key=lambda pair: pair[1],
-            reverse=True,
+        scored_topics = _filter_scored_topics(
+            sorted(
+                zip(topic_names, similarity_matrix[index]),
+                key=lambda pair: pair[1],
+                reverse=True,
+            ),
+            contents[index],
         )
         top_topics = [
             name

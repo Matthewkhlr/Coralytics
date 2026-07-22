@@ -12,6 +12,7 @@ type AnalysisSnapshotBarProps = {
   onSelect: (analysisId: string) => void;
   uploadCount?: number;
   showAddDataLink?: boolean;
+  hideSnapshotPicker?: boolean;
   tone?: "default" | "upload";
   className?: string;
 };
@@ -22,6 +23,7 @@ export function AnalysisSnapshotBar({
   onSelect,
   uploadCount,
   showAddDataLink = false,
+  hideSnapshotPicker = false,
   tone = "default",
   className,
 }: AnalysisSnapshotBarProps) {
@@ -42,7 +44,7 @@ export function AnalysisSnapshotBar({
 
   const selectedIndex = analyses.findIndex((a) => a.analysis_id === analysis.analysis_id);
   const runNumber = selectedIndex >= 0 ? runCount - selectedIndex : runCount;
-  const showPicker = runCount > 1;
+  const showPicker = runCount > 1 && !hideSnapshotPicker;
   const isLatest = selectedIndex === 0;
 
   return (
@@ -58,7 +60,7 @@ export function AnalysisSnapshotBar({
           <span
             className={cn(
               isUploadTone
-                ? "text-[0.975rem] font-bold tracking-tight text-foreground"
+                ? "text-caps font-medium text-muted-foreground"
                 : "text-xs font-semibold uppercase tracking-wider text-accent",
             )}
           >
@@ -70,7 +72,7 @@ export function AnalysisSnapshotBar({
             className={cn(
               isUploadTone
                 ? LANDING_SELECT
-                : "rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground min-w-[200px]",
+                : "rounded-none border border-border bg-card px-3 py-1.5 text-sm text-foreground min-w-[200px]",
             )}
           >
             {analyses.map((item, index) => {
@@ -89,7 +91,7 @@ export function AnalysisSnapshotBar({
         <span
           className={cn(
             isUploadTone
-              ? "text-[0.975rem] font-bold tracking-tight text-foreground"
+              ? "text-caps font-medium text-muted-foreground"
               : "text-xs font-semibold uppercase tracking-wider text-accent",
           )}
         >
@@ -106,7 +108,7 @@ export function AnalysisSnapshotBar({
         </Badge>
       ) : null}
 
-      <span className="text-xs leading-relaxed">
+      <span className="text-xs leading-[1.65]">
         {showPicker && selectedIndex > 0 ? `${formatRunLabel(analysis, runNumber)} · ` : null}
         {formatShortDate(analysis.created_at)} · {analysis.post_count.toLocaleString()} posts
         {uploadCount !== undefined

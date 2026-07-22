@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getShare } from "@/api/client";
 import { OrganismViewport } from "@/components/OrganismViewport";
@@ -24,6 +24,11 @@ export function RecruiterViewPage() {
       .finally(() => setLoading(false));
   }, [token]);
 
+  const organismData = useMemo(
+    () => resolveOrganismData(share?.payload.organism_data).data,
+    [share?.payload.organism_data],
+  );
+
   if (loading) {
     return (
       <main className="min-h-screen bg-ocean-radial flex items-center justify-center px-6">
@@ -46,7 +51,6 @@ export function RecruiterViewPage() {
   }
 
   const analysis = share.payload;
-  const { data: organismData } = resolveOrganismData(analysis.organism_data);
   const sentiment = analysis.sentiment_summary;
 
   return (

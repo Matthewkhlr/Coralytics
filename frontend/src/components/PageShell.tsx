@@ -74,7 +74,7 @@ export function PageDescription({
 export function OceanPageFrame({ children }: { children: ReactNode }) {
   const { theme } = useTheme();
   return (
-    <section className="relative -mt-[4.75rem] min-h-dvh overflow-hidden pt-[4.75rem]">
+    <section className="relative -mt-[4.75rem] min-h-dvh overflow-x-hidden pt-[4.75rem]">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 z-0 bg-[#78a4bb] dark:bg-[#00264d]"
@@ -82,7 +82,7 @@ export function OceanPageFrame({ children }: { children: ReactNode }) {
         <LandingReef appearance={theme} ambient frozen />
         <div className="absolute inset-0 bg-[#78a4bb]/45 dark:bg-[#00264d]/55" />
       </div>
-      <PageShell className="relative z-10">{children}</PageShell>
+      <PageShell className="relative z-10 pb-10">{children}</PageShell>
     </section>
   );
 }
@@ -103,5 +103,22 @@ export function SectionTitle({
     >
       {children}
     </h2>
+  );
+}
+
+/** Section label with divider lines — matches landing "How it works". */
+export function ExhibitSectionLabel({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <p className={cn("exhibit-section-label", className)}>
+      <span className="h-px flex-1 bg-foreground/25" aria-hidden />
+      {children}
+      <span className="h-px flex-1 bg-foreground/25" aria-hidden />
+    </p>
   );
 }

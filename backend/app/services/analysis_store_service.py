@@ -28,7 +28,7 @@ from app.models.persistence import (
     serialize_record_for_api,
     with_v2_metadata,
 )
-from app.services import source_summary_service
+from app.services import raw_data_service, source_summary_service
 
 # Leave headroom under Firestore's 1,048,576-byte document cap.
 _FIRESTORE_SAFE_DOC_BYTES = 900_000
@@ -360,11 +360,74 @@ def get_latest_analysis(user_id: str) -> dict[str, Any] | None:
     return serialize_record_for_api(_hydrate_analysis(user_id, latest))
 
 
+def _collect_referenced_upload_ids(user_id: str) -> set[str]:
+    referenced: set[str] = set()
+    for snapshot in _analyses_collection(user_id).stream():
+        if not snapshot.exists:
+            continue
+        data = snapshot.to_dict() or {}
+        for uid in data.get("upload_ids") or []:
+            if uid:
+                referenced.add(str(uid))
+    return referenced
+
+
+def _cleanup_orphaned_uploads(
+    user_id: str,
+    *,
+    deleted_upload_ids: list[str] | None = None,
+) -> list[str]:
+    """Remove raw uploads no longer referenced by any remaining analysis."""
+    remaining = _collect_referenced_upload_ids(user_id)
+
+    if not remaining:
+        # Fresh reef: no analyses left, drop all stored exports/posts.
+        candidate_ids = [
+            str(row["upload_id"])
+            for row in raw_data_service.list_raw_uploads(user_id, include_non_ready=True)
+            if row.get("upload_id")
+        ]
+    else:
+        candidate_ids = [
+            str(uid)
+            for uid in (deleted_upload_ids or [])
+            if uid and str(uid) not in remaining
+        ]
+
+    removed: list[str] = []
+    seen: set[str] = set()
+    for upload_id in candidate_ids:
+        if upload_id in seen:
+            continue
+        seen.add(upload_id)
+        result = raw_data_service.delete_raw_upload(user_id, upload_id)
+        if result.get("deleted"):
+            removed.append(upload_id)
+    return removed
+
+
+def cleanup_unreferenced_uploads(user_id: str) -> list[str]:
+    """Delete raw uploads that are not referenced by any saved analysis."""
+    referenced = _collect_referenced_upload_ids(user_id)
+    if not referenced:
+        return _cleanup_orphaned_uploads(user_id)
+
+    candidate_ids = [
+        str(row["upload_id"])
+        for row in raw_data_service.list_raw_uploads(user_id, include_non_ready=True)
+        if row.get("upload_id") and str(row["upload_id"]) not in referenced
+    ]
+    return _cleanup_orphaned_uploads(user_id, deleted_upload_ids=candidate_ids)
+
+
 def delete_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
     doc_ref = _analyses_collection(user_id).document(analysis_id)
     snapshot = doc_ref.get()
     if not snapshot.exists:
         return {"deleted": False, "analysis_id": analysis_id}
+
+    data = snapshot.to_dict() or {}
+    deleted_upload_ids = [str(uid) for uid in (data.get("upload_ids") or []) if uid]
 
     _delete_insight_chunks(user_id, analysis_id)
 
@@ -378,4 +441,13 @@ def delete_analysis(user_id: str, analysis_id: str) -> dict[str, Any]:
     )
     evo_ref.delete()
     doc_ref.delete()
-    return {"deleted": True, "analysis_id": analysis_id}
+
+    removed_upload_ids = _cleanup_orphaned_uploads(
+        user_id,
+        deleted_upload_ids=deleted_upload_ids,
+    )
+    return {
+        "deleted": True,
+        "analysis_id": analysis_id,
+        "removed_upload_ids": removed_upload_ids,
+    }

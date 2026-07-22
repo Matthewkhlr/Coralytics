@@ -1,16 +1,19 @@
 import type { Analysis } from "@/api/types";
 import { formatPlatform } from "@/lib/format";
 
-const SOURCE_PLATFORMS = new Set(["instagram", "linkedin", "reddit"]);
+const SOURCE_PLATFORMS = ["instagram", "linkedin", "reddit"] as const;
+const SOURCE_PLATFORM_SET = new Set<string>(SOURCE_PLATFORMS);
+
+export { SOURCE_PLATFORMS as REEF_SOURCE_PLATFORMS };
 
 function platformsFromSummary(summary: NonNullable<Analysis["source_summary"]>) {
-  const fromList = summary.platforms.filter((platform) => SOURCE_PLATFORMS.has(platform));
+  const fromList = summary.platforms.filter((platform) => SOURCE_PLATFORM_SET.has(platform));
   if (fromList.length > 0) return fromList;
 
   const fromUploads = (summary.uploads ?? []).flatMap((upload) => {
     const multi = (upload as { platforms?: string[] }).platforms;
-    if (multi?.length) return multi.filter((platform) => SOURCE_PLATFORMS.has(platform));
-    return SOURCE_PLATFORMS.has(upload.platform) ? [upload.platform] : [];
+    if (multi?.length) return multi.filter((platform) => SOURCE_PLATFORM_SET.has(platform));
+    return SOURCE_PLATFORM_SET.has(upload.platform) ? [upload.platform] : [];
   });
 
   return [...new Set(fromUploads)];
@@ -21,7 +24,7 @@ function platformsFromBreakdown(analysis: Analysis) {
     ...new Set(
       (analysis.platform_breakdown ?? [])
         .map((row) => row.platform)
-        .filter((platform) => SOURCE_PLATFORMS.has(platform)),
+        .filter((platform) => SOURCE_PLATFORM_SET.has(platform)),
     ),
   ];
 }

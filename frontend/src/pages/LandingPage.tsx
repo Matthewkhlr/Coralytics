@@ -65,7 +65,7 @@ export function LandingPage() {
           "Now observing" species card from design.html). bottom-28 keeps its
           base flush with the hero CTA button (hero uses pb-28). */}
       <aside className="pointer-events-none absolute bottom-28 right-10 z-10 hidden w-[280px] border border-foreground/20 bg-background/45 p-[22px] backdrop-blur-[10px] lg:block">
-        <p className="mb-2 flex items-center gap-3 text-caps font-medium text-muted-foreground">
+        <p className="exhibit-section-label">
           <span className="h-px flex-1 bg-foreground/25" aria-hidden />
           How it works
           <span className="h-px flex-1 bg-foreground/25" aria-hidden />
