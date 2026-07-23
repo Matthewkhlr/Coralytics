@@ -292,7 +292,7 @@ export function DashboardPage() {
   }, [customizeOpen]);
 
   return (
-    <OceanPageFrame>
+    <OceanPageFrame animated>
       {showBanner ? (
         <div className="mb-6">
           <DataStatusBanner status="error" error={latestError} onRetry={() => void reloadLatest()} />

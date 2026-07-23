@@ -160,7 +160,7 @@ export function InsightsPage() {
   const isPageLoading = latestStatus === "loading" || analysisLoading;
 
   return (
-    <OceanPageFrame>
+    <OceanPageFrame scenic wide animated>
       {showBanner ? (
         <div className="mb-6">
           <DataStatusBanner status="error" error={latestError} onRetry={() => void reloadLatest()} />

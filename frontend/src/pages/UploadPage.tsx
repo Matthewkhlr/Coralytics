@@ -887,7 +887,7 @@ export function UploadPage() {
   };
 
   return (
-    <UploadPageFrame>
+    <UploadPageFrame animated>
       <UploadPageHeader />
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:items-start lg:gap-10 xl:gap-12">
