@@ -183,7 +183,7 @@ function buildParams(isDark, lowPower) {
 
 export async function createReefScene(
   host,
-  { isDark = true, ambient = false, frozen = false } = {},
+  { isDark = true, ambient = false, scenic = false, frozen = false } = {},
 ) {
   const lowPower =
     window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
@@ -198,6 +198,10 @@ export async function createReefScene(
     params.causticStrength = 1.6;
     params.causticSpeed = 0.8;
   }
+  if (scenic) {
+    params.causticStrength = Math.max(params.causticStrength, 1.9);
+    params.particleCount = lowPower ? 450 : 900;
+  }
   let disposed = false;
 
   // Start remote model downloads immediately. Previously they only began
@@ -209,7 +213,7 @@ export async function createReefScene(
   // Ambient backdrops (e.g. the upload page) are just sand, grass and light —
   // no corals, no fish.
   const coralLoads = new Map(
-    ambient ? [] : coralDefs.map((def) => [def.id, gltfLoader.loadAsync(def.url)]),
+    ambient && !scenic ? [] : coralDefs.map((def) => [def.id, gltfLoader.loadAsync(def.url)]),
   );
   const fishLoad = ambient ? null : gltfLoader.loadAsync(FISH_URL);
 
@@ -664,6 +668,98 @@ export async function createReefScene(
     return pivot;
   };
 
+  /* ---- distant whales for scenic page backdrops ---- */
+  const whales = [];
+  const whaleGroup = new THREE.Group();
+  scene.add(whaleGroup);
+
+  const makeWhale = ({ scale = 1, color = "#315f78" } = {}) => {
+    const whale = new THREE.Group();
+    whale.scale.setScalar(scale);
+
+    const bodyMat = new THREE.MeshStandardNodeMaterial({
+      color: new THREE.Color(color),
+      roughness: 0.72,
+      metalness: 0,
+    });
+    const bellyMat = new THREE.MeshStandardNodeMaterial({
+      color: new THREE.Color("#8fb2c0"),
+      roughness: 0.82,
+      metalness: 0,
+    });
+
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.8, 32, 18), bodyMat);
+    body.scale.set(1.75, 0.48, 0.52);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    whale.add(body);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.64, 24, 14), bodyMat);
+    head.position.set(1.08, 0.02, 0);
+    head.scale.set(0.9, 0.68, 0.74);
+    head.castShadow = true;
+    whale.add(head);
+
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.62, 24, 12), bellyMat);
+    belly.position.set(0.28, -0.18, 0);
+    belly.scale.set(1.35, 0.18, 0.5);
+    whale.add(belly);
+
+    const tailStem = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.38, 1.05, 16), bodyMat);
+    tailStem.position.set(-1.2, 0, 0);
+    tailStem.rotation.z = Math.PI / 2;
+    tailStem.scale.set(0.72, 1, 0.72);
+    tailStem.castShadow = true;
+    whale.add(tailStem);
+
+    const flukeGeo = new THREE.ConeGeometry(0.34, 0.85, 3);
+    const flukeLeft = new THREE.Mesh(flukeGeo, bodyMat);
+    flukeLeft.position.set(-1.82, 0.08, 0.26);
+    flukeLeft.rotation.set(Math.PI / 2, 0, -0.75);
+    flukeLeft.scale.set(1, 0.42, 0.52);
+    whale.add(flukeLeft);
+
+    const flukeRight = flukeLeft.clone();
+    flukeRight.position.z = -0.26;
+    flukeRight.rotation.z = 0.75;
+    whale.add(flukeRight);
+
+    const finGeo = new THREE.ConeGeometry(0.24, 0.85, 3);
+    const finLeft = new THREE.Mesh(finGeo, bodyMat);
+    finLeft.position.set(0.18, -0.1, 0.55);
+    finLeft.rotation.set(1.15, 0.1, -0.85);
+    finLeft.scale.set(0.9, 0.32, 0.7);
+    whale.add(finLeft);
+
+    const finRight = finLeft.clone();
+    finRight.position.z = -0.55;
+    finRight.rotation.z = 0.85;
+    whale.add(finRight);
+
+    const dorsal = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.55, 3), bodyMat);
+    dorsal.position.set(-0.18, 0.42, 0);
+    dorsal.rotation.set(0, 0, Math.PI);
+    dorsal.scale.set(0.65, 0.7, 0.55);
+    whale.add(dorsal);
+
+    return whale;
+  };
+
+  const createWhales = () => {
+    const defs = [
+      { scale: 0.95, radiusX: 7.8, radiusZ: 3.2, y: 2.8, z: -3.2, speed: 0.045, phase: 0.1, color: "#2c5c76" },
+      { scale: 0.62, radiusX: 8.7, radiusZ: 2.5, y: 3.8, z: -5.0, speed: 0.032, phase: 2.3, color: "#244b63" },
+      { scale: 0.48, radiusX: 7.2, radiusZ: 2.0, y: 2.25, z: -4.1, speed: 0.055, phase: 4.1, color: "#3d7085" },
+    ];
+    defs.forEach((def) => {
+      const mesh = makeWhale(def);
+      whaleGroup.add(mesh);
+      whales.push({ mesh, ...def });
+    });
+  };
+
+  if (scenic) createWhales();
+
   /* ---- corals ---- */
   const coralsGroup = new THREE.Group();
   coralsGroup.visible = false;
@@ -686,6 +782,7 @@ export async function createReefScene(
       conf.scale * stretch[2],
     );
     inst.pivot.updateMatrixWorld(true);
+    if (!grass) return;
     coralWorldPos.copy(inst.localSphereCenter).applyMatrix4(inst.pivot.matrixWorld);
     const slot = grass.colliders[inst.slotIdx];
     slot.position.copy(coralWorldPos);
@@ -698,7 +795,7 @@ export async function createReefScene(
   const prepareCoral = async (def, slotIdx) => {
     const pivot = new THREE.Group();
     coralsGroup.add(pivot);
-    grass.colliders[slotIdx].type = "collision";
+    if (grass) grass.colliders[slotIdx].type = "collision";
     const inst = {
       id: def.id,
       pivot,
@@ -750,7 +847,7 @@ export async function createReefScene(
     }
   };
 
-  if (!ambient) {
+  if (!ambient || scenic) {
     Promise.all(
       coralDefs.map((def, i) => prepareCoral(def, CORAL_COLLIDER_SLOT_START + i)),
     ).then((attachFns) => {
@@ -759,6 +856,8 @@ export async function createReefScene(
       // Reveal the completed set as one unit on the next rendered frame.
       coralsGroup.visible = true;
     });
+  }
+  if (!ambient) {
     loadFish().catch((err) => console.warn("Failed to load fish model:", err));
   }
 
@@ -831,6 +930,17 @@ export async function createReefScene(
       pathFollow.pathOffset.value = fishPathOffset;
     }
 
+    for (const whale of whales) {
+      whale.phase = (whale.phase + dt * whale.speed) % 1;
+      const a = whale.phase * Math.PI * 2;
+      const x = Math.cos(a) * whale.radiusX;
+      const z = whale.z + Math.sin(a) * whale.radiusZ;
+      const y = whale.y + Math.sin(a * 2 + whale.scale) * 0.16;
+      whale.mesh.position.set(x, y, z);
+      whale.mesh.rotation.y = -a + Math.PI / 2;
+      whale.mesh.rotation.z = Math.sin(a * 2.4) * 0.035;
+    }
+
     if (grass) {
       if (mouseOverCanvas) {
         grass.colliders[0].position.copy(mouseHitPoint);
@@ -854,14 +964,16 @@ export async function createReefScene(
 
     grass?.update();
 
-    for (const inst of coralInstances) {
-      inst.pivot.updateMatrixWorld(true);
-      coralWorldPos.copy(inst.localSphereCenter).applyMatrix4(inst.pivot.matrixWorld);
-      const conf = params.corals[inst.id];
-      const slot = grass.colliders[inst.slotIdx];
-      slot.position.copy(coralWorldPos);
-      slot.endpoint.copy(coralWorldPos);
-      slot.radius = coralColliderRadius(conf);
+    if (grass) {
+      for (const inst of coralInstances) {
+        inst.pivot.updateMatrixWorld(true);
+        coralWorldPos.copy(inst.localSphereCenter).applyMatrix4(inst.pivot.matrixWorld);
+        const conf = params.corals[inst.id];
+        const slot = grass.colliders[inst.slotIdx];
+        slot.position.copy(coralWorldPos);
+        slot.endpoint.copy(coralWorldPos);
+        slot.radius = coralColliderRadius(conf);
+      }
     }
 
     if (sun.map) proceduralCaustics.update();

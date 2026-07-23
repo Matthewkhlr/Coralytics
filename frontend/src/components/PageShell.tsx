@@ -71,7 +71,15 @@ export function PageDescription({
  * reef as the upload page (sand + caustics, no coral, no fish, no motion),
  * dimmed by a scrim so page content stays readable.
  */
-export function OceanPageFrame({ children }: { children: ReactNode }) {
+export function OceanPageFrame({
+  children,
+  animated = false,
+  scenic = false,
+}: {
+  children: ReactNode;
+  animated?: boolean;
+  scenic?: boolean;
+}) {
   const { theme } = useTheme();
   return (
     <section className="relative -mt-[4.75rem] min-h-dvh overflow-x-hidden pt-[4.75rem]">
@@ -79,7 +87,7 @@ export function OceanPageFrame({ children }: { children: ReactNode }) {
         aria-hidden
         className="pointer-events-none absolute inset-0 z-0 bg-[#78a4bb] dark:bg-[#00264d]"
       >
-        <LandingReef appearance={theme} ambient frozen />
+        <LandingReef appearance={theme} ambient scenic={scenic} frozen={!animated} />
         <div className="absolute inset-0 bg-[#78a4bb]/45 dark:bg-[#00264d]/55" />
       </div>
       <PageShell className="relative z-10 pb-10">{children}</PageShell>
