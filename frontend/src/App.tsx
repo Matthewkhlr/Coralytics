@@ -1,119 +1,51 @@
-import {
-  BarChart3,
-  Download,
-  FileDown,
-  GitCompare,
-  Menu,
-  Network,
-  Settings,
-  Upload,
-  UserCircle,
-} from "lucide-react";
-import { OrganismViewport } from "./components/OrganismViewport";
-
-const quickLinks = [
-  { label: "Import or export coral", icon: Upload },
-  { label: "Download coral report", icon: FileDown },
-  { label: "My dashboard", icon: BarChart3 },
-  { label: "Compare my coral", icon: GitCompare },
-  { label: "Connect with others", icon: Network },
-];
-
-const visibilityStats = [
-  { label: "Profile views", value: "1.2k" },
-  { label: "Shared previews", value: "48" },
-  { label: "Recruiter opens", value: "19" },
-  { label: "Report exports", value: "7" },
-  { label: "Privacy checks", value: "93%" },
-];
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { AppShell } from "./components/AppShell";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { UploadFlowProvider } from "./contexts/UploadFlowContext";
+import { TooltipProvider } from "./components/ui/tooltip";
+import { LandingPage } from "./pages/LandingPage";
+import { UploadPage } from "./pages/UploadPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { InsightsPage } from "./pages/InsightsPage";
+import { LoginPage } from "./pages/LoginPage";
+import { RecruiterViewPage } from "./pages/RecruiterViewPage";
 
 export function App() {
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="/" aria-label="Coralytics home">
-          <span className="brand-mark" aria-hidden="true" />
-          <span>Coralytics</span>
-        </a>
+    <BrowserRouter>
+      <ThemeProvider>
+        <AuthProvider>
+          <TooltipProvider delayDuration={200}>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/view/:token" element={<RecruiterViewPage />} />
 
-        <nav className="main-nav" aria-label="Main navigation">
-          <a href="#dashboard">Dashboard</a>
-          <a href="#insights">Insights</a>
-          <a href="#share">Share</a>
-        </nav>
+              <Route element={<AppShell />}>
+                <Route element={<UploadFlowProvider />}>
+                  <Route path="/" element={<LandingPage />} />
+                  <Route element={<ProtectedRoute />}>
+                    <Route path="/upload" element={<UploadPage />} />
+                    <Route path="/dashboard" element={<DashboardPage />} />
+                    <Route path="/insights" element={<InsightsPage />} />
+                  </Route>
+                </Route>
+              </Route>
 
-        <div className="account-actions">
-          <span className="welcome">Welcome, Korra</span>
-          <button className="icon-button" type="button" aria-label="User profile">
-            <UserCircle size={22} />
-          </button>
-          <button className="icon-button" type="button" aria-label="Settings">
-            <Settings size={21} />
-          </button>
-          <button className="icon-button menu-button" type="button" aria-label="Open menu">
-            <Menu size={22} />
-          </button>
-        </div>
-      </header>
+              {/* Legacy redirects */}
+              <Route path="/about" element={<Navigate to="/" replace />} />
+              <Route path="/organism" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/coral" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/share" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/profile" element={<Navigate to="/" replace />} />
+              <Route path="/settings" element={<Navigate to="/" replace />} />
 
-      <section className="dashboard" id="dashboard">
-        <aside className="sidebar" aria-label="Quick links and visibility">
-          <div className="sidebar-section">
-            <p className="section-kicker">Visibility</p>
-            <h2>Your coral reach</h2>
-            <div className="stats-list">
-              {visibilityStats.map((stat) => (
-                <div className="stat-row" key={stat.label}>
-                  <span className="stat-dot" aria-hidden="true" />
-                  <span>{stat.label}</span>
-                  <strong>{stat.value}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="sidebar-section quick-links">
-            <p className="section-kicker">Quick links</p>
-            {quickLinks.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button className="quick-link" type="button" key={item.label}>
-                  <Icon size={18} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-
-        <section className="content-grid" aria-label="Coralytics overview">
-          <article className="metric-panel">
-            <p>Impact strength</p>
-            <strong>74%</strong>
-            <span>Digital footprint impression</span>
-          </article>
-
-          <article className="metric-panel">
-            <p>Sentiment balance</p>
-            <strong>+0.42</strong>
-            <span>Average tone across uploads</span>
-          </article>
-
-          <section className="organism-panel" aria-label="3D coral visualiser">
-            <div className="panel-heading">
-              <div>
-                <p className="section-kicker">Personalized 3D coral</p>
-                <h1>My Coral</h1>
-              </div>
-              <button className="secondary-action" type="button">
-                <Download size={17} />
-                <span>Export</span>
-              </button>
-            </div>
-            <OrganismViewport />
-          </section>
-        </section>
-      </section>
-    </main>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </TooltipProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </BrowserRouter>
   );
 }

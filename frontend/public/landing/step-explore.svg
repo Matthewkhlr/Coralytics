@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200" fill="none">
+  <rect width="320" height="200" rx="16" fill="#0d2438"/>
+  <rect x="130" y="60" width="20" height="90" rx="4" fill="#54d6c5"/>
+  <polygon points="140,45 125,60 155,60" fill="#f7b267"/>
+  <rect x="95" y="100" width="40" height="8" rx="4" fill="#7ddf64" transform="rotate(-25 115 104)"/>
+  <rect x="165" y="110" width="45" height="8" rx="4" fill="#8aa7ff" transform="rotate(20 187 114)"/>
+  <text x="160" y="175" text-anchor="middle" fill="#8aa7b5" font-family="system-ui,sans-serif" font-size="13">Explore coral</text>
+</svg>

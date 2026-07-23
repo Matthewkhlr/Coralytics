@@ -1,348 +1,910 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sentiment-positive: var(--sentiment-positive);
+  --color-sentiment-neutral: var(--sentiment-neutral);
+  --color-sentiment-negative: var(--sentiment-negative);
+  --color-reef: var(--reef);
+  --color-coral: var(--coral);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+}
+
 :root {
-  color: #172022;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  background: #eef1ef;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  /* Square corners across cards/containers to match the rectangular buttons */
+  --radius: 0rem;
+
+  /* Light coral reef — soft lagoon pearl with vivid coral */
+  --background: oklch(0.975 0.012 210);
+  --foreground: oklch(0.28 0.04 230);
+
+  --card: oklch(0.995 0.008 205);
+  --card-foreground: oklch(0.28 0.04 230);
+
+  --popover: oklch(0.995 0.008 205);
+  --popover-foreground: oklch(0.28 0.04 230);
+
+  --primary: oklch(0.72 0.175 22);
+  --primary-foreground: oklch(0.16 0.03 240);
+
+  --secondary: oklch(0.93 0.025 200);
+  --secondary-foreground: oklch(0.32 0.05 220);
+
+  --muted: oklch(0.94 0.018 205);
+  --muted-foreground: oklch(0.48 0.03 220);
+
+  --accent: oklch(0.58 0.09 195);
+  --accent-foreground: oklch(0.99 0.01 200);
+
+  --destructive: oklch(0.64 0.2 22);
+  --destructive-foreground: oklch(0.99 0 0);
+
+  --border: oklch(0.55 0.04 210 / 22%);
+  --input: oklch(0.55 0.04 210 / 18%);
+  --ring: oklch(0.72 0.175 22);
+
+  --reef: oklch(0.58 0.09 195);
+  --coral: oklch(0.72 0.175 22);
+
+  --sentiment-positive: oklch(0.52 0.16 155);
+  --sentiment-neutral: oklch(0.72 0.16 92);
+  --sentiment-negative: oklch(0.58 0.22 25);
+
+  --chart-1: oklch(0.72 0.175 22);
+  --chart-2: oklch(0.58 0.09 195);
+  --chart-3: oklch(0.58 0.13 165);
+  --chart-4: oklch(0.68 0.08 85);
+  --chart-5: oklch(0.55 0.12 300);
+
+  --surface-deep: oklch(0.96 0.015 210);
+  --surface-panel: oklch(0.99 0.01 205 / 0.72);
+  --surface-inset: oklch(0.94 0.02 210 / 0.7);
+  --surface-viewport: oklch(0.92 0.025 210);
+  --glow-coral: oklch(0.72 0.175 22 / 0.14);
+  --glow-reef: oklch(0.58 0.09 195 / 0.14);
+  --glow-ocean: oklch(0.55 0.08 230 / 0.12);
+  --glow-grow: oklch(0.58 0.13 165 / 0.12);
+  --ocean-spot-1: oklch(0.82 0.06 200 / 0.55);
+  --ocean-spot-2: oklch(0.78 0.12 22 / 0.22);
+  --ocean-spot-3: oklch(0.8 0.07 185 / 0.35);
 }
 
-* {
-  box-sizing: border-box;
+.dark {
+  /* Deep ocean night — vivid coral accents */
+  --background: oklch(0.18 0.035 235);
+  --foreground: oklch(0.97 0.012 200);
+
+  --card: oklch(0.26 0.045 225);
+  --card-foreground: oklch(0.97 0.012 200);
+
+  --popover: oklch(0.26 0.045 225);
+  --popover-foreground: oklch(0.97 0.012 200);
+
+  --primary: oklch(0.72 0.175 22);
+  --primary-foreground: oklch(0.16 0.03 240);
+
+  --secondary: oklch(0.32 0.05 215);
+  --secondary-foreground: oklch(0.97 0.012 200);
+
+  --muted: oklch(0.28 0.035 225);
+  --muted-foreground: oklch(0.76 0.03 210);
+
+  --accent: oklch(0.76 0.095 190);
+  --accent-foreground: oklch(0.16 0.03 240);
+
+  --destructive: oklch(0.64 0.2 22);
+  --destructive-foreground: oklch(0.98 0 0);
+
+  --border: oklch(0.5 0.045 200 / 32%);
+  --input: oklch(0.5 0.045 200 / 26%);
+  --ring: oklch(0.76 0.095 190);
+
+  --reef: oklch(0.76 0.095 190);
+  --coral: oklch(0.72 0.175 22);
+
+  --sentiment-positive: oklch(0.78 0.16 155);
+  --sentiment-neutral: oklch(0.86 0.14 92);
+  --sentiment-negative: oklch(0.72 0.2 25);
+
+  --chart-1: oklch(0.72 0.175 22);
+  --chart-2: oklch(0.76 0.095 190);
+  --chart-3: oklch(0.78 0.14 165);
+  --chart-4: oklch(0.82 0.07 85);
+  --chart-5: oklch(0.65 0.14 300);
+
+  --surface-deep: oklch(0.17 0.035 235);
+  --surface-panel: oklch(0.26 0.045 225 / 0.5);
+  --surface-inset: oklch(0.17 0.035 235 / 0.5);
+  --surface-viewport: oklch(0.15 0.035 235);
+  --glow-coral: oklch(0.72 0.175 22 / 0.16);
+  --glow-reef: oklch(0.76 0.095 190 / 0.16);
+  --glow-ocean: oklch(0.55 0.09 230 / 0.18);
+  --glow-grow: oklch(0.78 0.14 165 / 0.14);
+  --ocean-spot-1: oklch(0.34 0.07 210 / 0.5);
+  --ocean-spot-2: oklch(0.55 0.15 22 / 0.28);
+  --ocean-spot-3: oklch(0.3 0.08 195 / 0.45);
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.55;
+    letter-spacing: 0.01em;
+    margin: 0;
+    min-width: 320px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+    letter-spacing: -0.01em;
+    font-weight: 500;
+  }
+
+  button,
+  a {
+    font: inherit;
+  }
+
+  /* Consistent right-side scrolling across pages: the page always owns the
+     vertical scrollbar and reserves its gutter so tabs don't shift. */
+  html {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  /* Same scrollbar on every page and inner view: grey rounded thumb on a
+     dark track (matches the reference macOS-style bar). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #606060 #2b2b2b;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: #2b2b2b;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: #606060;
+    border-radius: 999px;
+    border: 2px solid #2b2b2b;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: #7a7a7a;
+  }
 }
 
-button,
-a {
-  font: inherit;
-}
-
-.app-shell {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #f4f6f4 0%, #e9edeb 100%);
-}
-
-.topbar {
-  display: grid;
-  grid-template-columns: 280px minmax(240px, 1fr) auto;
-  align-items: center;
-  gap: 24px;
-  min-height: 76px;
-  padding: 0 28px;
-  border-bottom: 1px solid #d7ddda;
-  background: rgb(245 247 246 / 92%);
-  backdrop-filter: blur(16px);
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  color: #111817;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-decoration: none;
-  text-transform: uppercase;
-}
-
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
+@utility bg-ocean-radial {
   background:
-    radial-gradient(circle at 36% 30%, #f6f1e2 0 18%, transparent 19%),
-    linear-gradient(135deg, #0f7f76, #d76d4b 58%, #f1c66e);
-  box-shadow: 0 0 0 5px rgb(15 127 118 / 10%);
+    radial-gradient(ellipse 80% 50% at 10% -10%, var(--ocean-spot-2), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, var(--ocean-spot-1), transparent 50%),
+    radial-gradient(ellipse 50% 35% at 70% 100%, var(--ocean-spot-3), transparent 55%),
+    var(--background);
 }
 
-.main-nav {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
+@utility font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
 }
 
-.main-nav a {
-  min-width: 108px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  color: #3d4748;
-  text-align: center;
-  text-decoration: none;
-}
-
-.main-nav a:first-child {
-  color: #f8fbfb;
-  background: #172022;
-}
-
-.account-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.welcome {
-  max-width: 180px;
-  color: #354344;
-  white-space: nowrap;
-}
-
-.icon-button {
-  display: inline-grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border: 1px solid #cbd3d0;
-  border-radius: 8px;
-  color: #182021;
-  background: #ffffff;
-  cursor: pointer;
-}
-
-.menu-button {
-  display: none;
-}
-
-.dashboard {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 24px;
-  width: min(1180px, calc(100% - 48px));
-  margin: 28px auto;
-}
-
-.sidebar {
-  display: grid;
-  gap: 16px;
-  align-content: start;
-}
-
-.sidebar-section,
-.metric-panel,
-.organism-panel {
-  border: 1px solid #d4dcda;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 14px 28px rgb(25 35 36 / 8%);
-}
-
-.sidebar-section {
-  padding: 20px;
-}
-
-.section-kicker {
-  margin: 0 0 6px;
-  color: #60706d;
+/* Small uppercase label — nav links, eyebrows, meta rows (design.html) */
+@utility text-caps {
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
+  font-weight: 400;
 }
 
-.sidebar h2,
-.organism-panel h1 {
-  margin: 0;
-  color: #121a1b;
-}
-
-.sidebar h2 {
-  font-size: 22px;
-}
-
-.stats-list {
-  display: grid;
-  gap: 14px;
-  margin-top: 22px;
-}
-
-.stat-row {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  min-height: 42px;
-  color: #394749;
-}
-
-.stat-row strong {
-  color: #11191a;
-}
-
-.stat-dot {
-  width: 16px;
-  height: 16px;
-  border: 4px solid #0c1415;
-  border-radius: 50%;
-}
-
-.quick-links {
-  display: grid;
-  gap: 8px;
-}
-
-.quick-link {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  color: #243031;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.quick-link:hover {
-  background: #edf4f1;
-}
-
-.content-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 18px;
-}
-
-.metric-panel {
-  min-height: 116px;
-  padding: 20px;
-}
-
-.metric-panel p,
-.metric-panel span {
-  margin: 0;
-  color: #60706d;
-}
-
-.metric-panel strong {
-  display: block;
-  margin: 10px 0 8px;
-  color: #11191a;
-  font-size: clamp(28px, 4vw, 42px);
-  line-height: 1;
-}
-
-.organism-panel {
-  grid-column: 1 / -1;
-  min-height: min(62vh, 620px);
-  padding: 22px;
-}
-
-.panel-heading {
+/* Organism viewport (Three.js host) */
+.organism-viewport-wrapper {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
-.organism-panel h1 {
-  font-size: clamp(28px, 4vw, 44px);
-  line-height: 1.05;
-}
-
-.secondary-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 0 14px;
-  border: 1px solid #cbd3d0;
-  border-radius: 8px;
-  color: #121a1b;
-  background: #ffffff;
-  cursor: pointer;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  min-height: 280px;
 }
 
 .organism-viewport {
   position: relative;
-  width: 100%;
-  min-height: 440px;
+  flex: 1;
+  min-height: 280px;
+  border-radius: 1.1rem;
   overflow: hidden;
-  border: 1px solid #1f292a;
-  border-radius: 4px;
-  background:
-    linear-gradient(135deg, transparent 49.7%, #b8c1c2 50%, transparent 50.3%),
-    linear-gradient(45deg, transparent 49.7%, #b8c1c2 50%, transparent 50.3%),
-    #f9fbfc;
+  touch-action: none;
+  background: var(--surface-viewport);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+}
+
+.organism-viewport--frameless {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.organism-viewport--frameless::after {
+  display: none;
+}
+
+.organism-viewport::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse 85% 75% at 50% 42%,
+    transparent 40%,
+    color-mix(in oklab, #020a14 18%, transparent) 100%
+  );
+  z-index: 1;
 }
 
 .organism-viewport canvas {
   display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.viewport-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--surface-viewport) 78%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.viewport-tooltip {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  font-size: 0.75rem;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  backdrop-filter: blur(10px);
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viewport-scrubber {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 38px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--background) 82%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.viewport-scrubber-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.viewport-scrubber-range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.viewport-scrubber-value {
+  font-size: 0.7rem;
+  color: var(--foreground);
+  flex-shrink: 0;
+  min-width: 5.5rem;
+  text-align: right;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+/* Upload flow — exhibit card surfaces (matches landing "How it works") */
+.upload-flow-panel {
+  background: color-mix(in oklab, var(--background) 45%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.upload-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.upload-step {
+  position: relative;
+  transition: opacity 0.45s ease;
+}
+
+.upload-step--locked {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.upload-step--done:not(.upload-step--active) {
+  opacity: 0.88;
+}
+
+.upload-step__shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+  border: 1px solid color-mix(in oklab, var(--foreground) 18%, transparent);
+  background: transparent;
+  overflow: visible;
+  transition:
+    border-color 0.55s ease,
+    transform 0.55s ease;
+}
+
+.upload-step--active .upload-step__shell {
+  border-color: color-mix(in oklab, var(--foreground) 40%, transparent);
+  transform: translateY(-1px);
+  /* Same surface as the landing "How it works" card (bg-background/45 + blur) */
+  background: color-mix(in oklab, var(--background) 45%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.upload-step__front {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  width: 100%;
+  padding: 1rem 1.1rem 1.05rem;
+  text-align: left;
+  background: transparent;
+  color: var(--foreground);
+}
+
+/* No coloured glows — the exhibit card style is flat */
+.upload-step__glow {
+  display: none;
+}
+
+/* Icon circle — matches the landing "How it works" step icons */
+.upload-step__badge {
+  position: relative;
+  z-index: 1;
+  grid-row: 1;
+  grid-column: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+  background: color-mix(in oklab, var(--background) 80%, transparent);
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--muted-foreground);
+}
+
+.upload-step__badge--active {
+  border-color: color-mix(in oklab, var(--foreground) 40%, transparent);
+  color: var(--foreground);
+}
+
+.upload-step__badge--done {
+  border-color: color-mix(in oklab, var(--foreground) 35%, transparent);
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+
+/* Section eyebrows — landing "How it works", My Runs, Topic Explorer */
+.exhibit-section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.reef-sidebar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.reef-sidebar-field .exhibit-field-label {
+  margin-bottom: 0;
+}
+
+.reef-instruction-panel {
+  overflow: hidden;
+  padding: 0;
+}
+
+.reef-instruction-panel__heading {
+  padding: 0.625rem 1rem 0;
+}
+
+.reef-instruction-panel__tips {
+  margin: 0;
+  padding: 0.35rem 1rem 0.35rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--foreground);
+}
+
+.reef-meaning-table__rows {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1.25rem;
+  margin: 0;
+  padding: 0 1rem 0.75rem;
+  list-style: none;
+}
+
+.reef-meaning-table__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--foreground);
+}
+
+.reef-post-callout {
+  border: 1px solid color-mix(in oklab, var(--accent) 55%, var(--foreground) 20%);
+  background: color-mix(in oklab, var(--background) 88%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 40px color-mix(in oklab, #020a14 25%, transparent);
+  padding: 0.85rem 0.9rem 0.95rem;
+}
+
+.reef-post-callout--sidebar {
+  position: relative;
+  width: 100%;
+  z-index: 2;
+  margin-top: 2.5rem;
+}
+
+.reef-post-callout__anchor {
+  pointer-events: none;
+  position: absolute;
+  z-index: 12;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 2px solid color-mix(in oklab, var(--accent) 90%, white);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 30%, transparent);
+  box-shadow:
+    0 0 10px color-mix(in oklab, var(--accent) 70%, transparent),
+    0 0 22px color-mix(in oklab, var(--accent) 40%, transparent);
+  transform: translate(-50%, -50%);
+}
+
+.reef-post-connector {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
   width: 100%;
   height: 100%;
+  overflow: visible;
 }
 
-.viewport-label {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
+.reef-post-connector__beam {
+  fill: none;
+  stroke: url(#reef-connector-beam);
+  stroke-width: 28;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.55;
+}
+
+.reef-post-connector__line {
+  fill: none;
+  stroke: color-mix(in oklab, var(--accent) 85%, white);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+
+.reef-post-callout__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.reef-post-callout__eyebrow {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.reef-post-callout__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.reef-post-callout__close:hover {
+  color: var(--foreground);
+}
+
+.reef-post-callout__source {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.reef-post-callout__platform-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 22%, var(--background));
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.reef-post-callout__post-id {
+  margin: 0.55rem 0 0;
+  display: inline-block;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 18%, transparent);
+  background: color-mix(in oklab, var(--background) 70%, transparent);
+  padding: 0.2rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--foreground);
+}
+
+.reef-post-callout__fields {
+  margin: 0.75rem 0 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.reef-post-callout__field {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.reef-post-callout__field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.reef-post-callout__field-value {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--foreground);
+}
+
+.reef-post-callout__text-block {
+  margin-top: 0.75rem;
+  border-top: 1px solid color-mix(in oklab, var(--foreground) 15%, transparent);
+  padding-top: 0.65rem;
+}
+
+.reef-post-callout__text {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: color-mix(in oklab, var(--foreground) 92%, transparent);
+}
+
+.reef-post-callout__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.exhibit-field-label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.upload-step__heading {
+  position: relative;
   z-index: 1;
-  padding: 8px 10px;
-  border: 1px solid #d2dcda;
-  border-radius: 8px;
-  color: #465657;
-  background: rgb(255 255 255 / 86%);
-  font-size: 13px;
+  grid-row: 1;
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+  overflow: visible;
 }
 
-@media (max-width: 900px) {
-  .topbar {
-    grid-template-columns: 1fr auto;
-  }
+.upload-step__help-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  z-index: 30;
+}
 
-  .main-nav,
-  .welcome {
-    display: none;
-  }
+.upload-step__help {
+  display: inline-grid;
+  place-items: center;
+  line-height: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: color-mix(in oklab, var(--muted-foreground) 90%, transparent);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
 
-  .menu-button {
-    display: inline-grid;
-  }
+/* Hover matches the nav icon hover: muted → foreground */
+.upload-step__help:hover,
+.upload-step__help:focus-visible {
+  color: var(--foreground);
+  outline: none;
+}
 
-  .dashboard {
-    grid-template-columns: 1fr;
-    width: min(100% - 28px, 720px);
+/* Body text matches the dropzone label: text-sm, foreground/95, 1.65 leading.
+   Wide enough that each "Supported …" sentence stays on its own line. */
+.upload-step__help-popover {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 50%;
+  z-index: 40;
+  width: max-content;
+  max-width: min(32rem, 90vw);
+  padding: 0.55rem 0.8rem;
+  border-radius: 0;
+  border: 1px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+  /* Same surface as the step number circle */
+  background: color-mix(in oklab, var(--background) 80%, transparent);
+  color: color-mix(in oklab, var(--foreground) 95%, transparent);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.65;
+  /* Undo the caps styling inherited from the step heading */
+  text-transform: none;
+  letter-spacing: 0.01em;
+  white-space: pre-line;
+  transform: translateX(-50%);
+}
+
+.upload-step__summary {
+  position: relative;
+  z-index: 1;
+  grid-row: 2;
+  grid-column: 2;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.upload-step__connector {
+  display: block;
+  width: 1px;
+  height: 1.25rem;
+  margin: 0.35rem auto 0.35rem 1.85rem;
+  background: color-mix(in oklab, var(--foreground) 25%, transparent);
+}
+
+.upload-step__inside {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.upload-step--active .upload-step__inside {
+  grid-template-rows: 1fr;
+}
+
+.upload-step__inside-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.upload-step--active .upload-step__inside-inner {
+  border-top: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  background: transparent;
+  padding: 0 1.15rem 1.25rem;
+}
+
+.upload-step__description {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.upload-step__content {
+  margin-top: 1.15rem;
+}
+
+.upload-dropzone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 1.15rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px dashed color-mix(in oklab, var(--foreground) 30%, transparent);
+  background: transparent;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.35s ease,
+    background 0.35s ease;
+}
+
+/* Hover matches the nav icon hover: muted → foreground */
+.upload-dropzone:hover {
+  border-color: color-mix(in oklab, var(--foreground) 60%, transparent);
+}
+
+.upload-dropzone:hover .upload-dropzone__label {
+  color: var(--foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload-step,
+  .upload-step__shell,
+  .upload-step__front,
+  .upload-step__inside,
+  .upload-step__inside-inner {
+    animation: none;
+    transition: none;
   }
 }
 
-@media (max-width: 620px) {
-  .topbar {
-    min-height: 68px;
-    padding: 0 14px;
-  }
+.insights-card-interactive {
+  cursor: pointer;
+  transition:
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.25s ease,
+    background 0.25s ease;
+}
 
-  .brand {
-    font-size: 16px;
-  }
+.insights-card-interactive:hover {
+  transform: translateY(-3px);
+}
 
-  .account-actions .icon-button:not(.menu-button) {
-    display: none;
-  }
+.insights-card-interactive[data-state="open"] {
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+  background: color-mix(in oklab, var(--card) 92%, var(--accent));
+}
 
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
+.insights-tone-seg {
+  transition: flex-grow 0.35s ease, filter 0.2s ease, opacity 0.2s ease;
+}
 
-  .organism-panel {
-    padding: 16px;
-  }
-
-  .panel-heading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .organism-viewport {
-    min-height: 340px;
-  }
+.insights-tone-seg:hover {
+  filter: brightness(1.15);
+  opacity: 1;
 }
