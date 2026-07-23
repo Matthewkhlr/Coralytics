@@ -16,7 +16,7 @@ const firebaseConfig = {
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+const db = getFirestore(app);
 
 // Keep the Firebase login session across page reloads and tab switches.
 void setPersistence(auth, browserLocalPersistence);

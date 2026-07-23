@@ -1,6 +1,6 @@
 import type { Analysis } from "@/api/types";
 import { Button } from "@/components/ui/button";
-import { LANDING_BUTTON_SM } from "@/lib/buttonStyles";
+import { CHIP_RADIUS, REEF_FIELD_SURFACE } from "@/lib/buttonStyles";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -8,55 +8,50 @@ type OlderSnapshotBannerProps = {
   analysis: Analysis;
   postsDeltaFromLatest: number;
   onViewLatest: () => void;
-  tone?: "default" | "upload";
   className?: string;
 };
+
+const BANNER_SURFACE = cn(
+  CHIP_RADIUS,
+  "border border-foreground/20 shadow-none",
+  REEF_FIELD_SURFACE,
+);
+
+const BANNER_ACTION = cn(
+  CHIP_RADIUS,
+  "h-auto shrink-0 border-foreground/25 bg-background/30 px-3 py-1.5 text-xs font-semibold text-foreground shadow-none hover:border-foreground/40 hover:bg-background/50",
+);
 
 export function OlderSnapshotBanner({
   analysis,
   postsDeltaFromLatest,
   onViewLatest,
-  tone = "default",
   className,
 }: OlderSnapshotBannerProps) {
-  const isUploadTone = tone === "upload";
-
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center justify-between gap-3 text-sm",
-        isUploadTone
-          ? "border border-foreground/20 bg-background/45 px-4 py-3 backdrop-blur-md"
-          : "rounded-xl border border-border/60 bg-card/60 px-4 py-3",
+        BANNER_SURFACE,
+        "flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm",
         className,
       )}
     >
-      <p className="text-muted-foreground leading-relaxed">
+      <p className="leading-relaxed text-foreground/80">
         Viewing an older snapshot from {formatShortDate(analysis.created_at)}.
         {postsDeltaFromLatest > 0 ? (
           <>
             {" "}
             Latest snapshot has{" "}
-            <span className="font-semibold text-accent">
+            <span className="font-semibold text-coral">
               +{postsDeltaFromLatest.toLocaleString()}
             </span>{" "}
             more posts.
           </>
         ) : null}
       </p>
-      {isUploadTone ? (
-        <Button type="button" variant="outline" className={LANDING_BUTTON_SM} onClick={onViewLatest}>
-          View latest
-        </Button>
-      ) : (
-        <button
-          type="button"
-          onClick={onViewLatest}
-          className="text-xs font-semibold text-accent hover:underline shrink-0"
-        >
-          View latest
-        </button>
-      )}
+      <Button type="button" variant="outline" className={BANNER_ACTION} onClick={onViewLatest}>
+        View latest
+      </Button>
     </div>
   );
 }

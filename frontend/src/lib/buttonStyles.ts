@@ -33,7 +33,5 @@ export const EXHIBIT_PANEL =
 /** Inner tiles inside exhibit panels — no nested blur/border (avoids seam artifacts). */
 export const EXHIBIT_INSET = "rounded-none bg-background/20";
 
-export const UPLOAD_CARD = EXHIBIT_PANEL;
-
 /** File chips on upload steps 1–2 (dropzone file list + source sort). */
 export const UPLOAD_CHIP = `${CHIP_RADIUS} border border-foreground/20 bg-background/80`;

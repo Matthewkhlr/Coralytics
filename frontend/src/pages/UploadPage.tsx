@@ -18,7 +18,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useUploadFlow, type DraftFile } from "@/contexts/UploadFlowContext";
 import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
 import { useUploads } from "@/hooks/useUploads";
-import { OceanPageFrame, PageHeader, PageTitle, SectionTitle } from "@/components/PageShell";
+import { OceanPageFrame, PageHeader, PageTitle } from "@/components/PageShell";
 import { MyRunsPanel } from "@/components/MyRunsPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
