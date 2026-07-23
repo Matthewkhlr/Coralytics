@@ -75,6 +75,20 @@ export type AnalysisDateRange = {
   latest: string | null;
 };
 
+export type AnalysisSourceUpload = {
+  upload_id: string;
+  filename: string;
+  platform: string;
+  post_count: number;
+};
+
+export type AnalysisSourceSummary = {
+  upload_count: number;
+  post_count: number;
+  platforms: string[];
+  uploads: AnalysisSourceUpload[];
+};
+
 export type PostInsight = {
   id?: string;
   _upload_id?: string;
@@ -84,6 +98,8 @@ export type PostInsight = {
   sentiment_label?: string;
   sentiment_compound?: number;
   topics?: string[];
+  post_type?: string;
+  engagement?: number | null;
 };
 
 export type Analysis = {
@@ -103,6 +119,7 @@ export type Analysis = {
   created_at?: string;
   updated_at?: string;
   upload_ids?: string[];
+  source_summary?: AnalysisSourceSummary | null;
   date_range?: AnalysisDateRange | null;
   diff?: AnalysisDiff | null;
   post_insights?: PostInsight[];
@@ -153,6 +170,7 @@ export type AnalyzeRequest = {
   user_id: string;
   persist?: boolean;
   name?: string;
+  upload_ids?: string[];
 };
 
 export type PostSummary = {
@@ -162,6 +180,7 @@ export type PostSummary = {
   created_at?: string;
   sentiment_compound?: number;
   topics?: string[];
+  post_type?: string;
 };
 
 export type ShareRecord = {
@@ -177,4 +196,14 @@ export type CreateShareRequest = {
   user_id: string;
   analysis_id: string;
   expiry_days?: number;
+};
+
+export type ReefThemeSettingsApi = {
+  show_rock: boolean;
+  show_fish: boolean;
+  water_color?: string | null;
+  sand_color?: string | null;
+  fish_color?: string | null;
+  rock_color?: string | null;
+  updated_at?: string;
 };

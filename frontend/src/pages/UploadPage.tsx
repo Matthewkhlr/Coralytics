@@ -1,6 +1,8 @@
 import {
   useCallback,
+  useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,21 +13,22 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import { Check, FilePlus2, GripVertical, Info, LoaderCircle, Trash2 } from "lucide-react";
 import { ApiError, analyzeUploads, updateUploadPlatform, uploadExport } from "@/api/client";
-import type { Analysis, Upload } from "@/api/types";
+import type { Upload } from "@/api/types";
 import { useAuth } from "@/contexts/AuthContext";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { useUploadFlow, type DraftFile } from "@/contexts/UploadFlowContext";
 import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
 import { useUploads } from "@/hooks/useUploads";
 import { OceanPageFrame, PageHeader, PageTitle, SectionTitle } from "@/components/PageShell";
+import { MyRunsPanel } from "@/components/MyRunsPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { cacheAnalysis, invalidateAnalysisCache } from "@/lib/analysisCache";
-import { formatPlatform, formatRunLabel, formatShortDate } from "@/lib/format";
+import { invalidateUploadsCache } from "@/lib/uploadsCache";
+import { LANDING_BUTTON, UPLOAD_CHIP } from "@/lib/buttonStyles";
+import { formatPlatform } from "@/lib/format";
+import { cacheUploadFlowDrafts } from "@/lib/uploadFlowDraftCache";
 import { cn } from "@/lib/utils";
 
 const PLATFORMS = [
@@ -35,13 +38,6 @@ const PLATFORMS = [
 ] as const;
 
 type SocialPlatform = (typeof PLATFORMS)[number]["key"];
-
-type DraftFile = {
-  id: string;
-  file: File;
-  contentHash: string;
-  error?: string;
-};
 
 const ALLOWED_EXT = new Set(["json", "txt", "csv", "zip"]);
 
@@ -84,21 +80,6 @@ function cloneDraftForUpload(rows: DraftFile[]): DraftFile[] {
   }));
 }
 
-function isAlreadySaved(hash: string, uploads: Upload[]) {
-  return uploads.some((upload) => upload.content_hash === hash);
-}
-
-function platformsLabel(analysis: Analysis) {
-  const platforms = analysis.platform_breakdown?.map((p) => formatPlatform(p.platform)) ?? [];
-  if (!platforms.length) return "All uploads";
-  return platforms.join(" + ");
-}
-
-function topicCount(analysis: Analysis) {
-  return analysis.topics?.length ?? analysis.organism_data?.topics?.length ?? 0;
-}
-
-/** Matches backend `_default_run_name` — MM/DD/YYYY_HH:MM (local). */
 function defaultRunName(when = new Date()) {
   const mm = String(when.getMonth() + 1).padStart(2, "0");
   const dd = String(when.getDate()).padStart(2, "0");
@@ -118,9 +99,48 @@ const UPLOAD_STEP_TONES = {
 const UPLOAD_FILE_HELP =
   "Supported sources: Instagram, LinkedIn, Reddit.\nSupported formats: .zip, .json, .csv, .txt.";
 
-/** Matches the landing page "Get started" button (use with variant="outline"). */
-const LANDING_BUTTON =
-  "h-auto rounded-none border-foreground/35 bg-accent/10 px-6 py-3 text-[12px] font-medium uppercase tracking-[0.22em] backdrop-blur-md hover:bg-accent/20 hover:border-foreground/60";
+const METADATA_ONLY_ERROR = "Personal metadata only";
+const UNSUPPORTED_SOURCE_ERROR = "Unsupported source";
+
+function isMetadataOnlyError(message: string | undefined): boolean {
+  return message?.trim() === METADATA_ONLY_ERROR;
+}
+
+function isUnsupportedSourceError(message: string | undefined): boolean {
+  return message?.trim() === UNSUPPORTED_SOURCE_ERROR;
+}
+
+/** Hide ingest rejections that are already shown inline or in the unsupported-files list. */
+function isInlineIngestError(message: string | undefined): boolean {
+  return isMetadataOnlyError(message) || isUnsupportedSourceError(message);
+}
+
+/** Fallback until the upload flow baseline height is measured. */
+const RUNS_PANEL_FALLBACK_PX = 640;
+const RUNS_PANEL_HEIGHT_KEY = "coralytics:uploadRunsPanelHeight";
+
+function readStoredRunsPanelHeight(): number | null {
+  try {
+    const raw = sessionStorage.getItem(RUNS_PANEL_HEIGHT_KEY);
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function shouldCalibrateRunsPanelHeight(
+  activeStep: number,
+  uploadOpen: boolean,
+  draftLength: number,
+) {
+  // Step 1 default (dropzone only): full stack through View Your Coral.
+  if (activeStep === 1 && uploadOpen && draftLength === 0) return true;
+  // Step 4 default: recalibrate if needed.
+  if (activeStep === 4) return true;
+  return false;
+}
 
 function StepHelp({ text, ariaLabel = "More information" }: { text: string; ariaLabel?: string }) {
   const [open, setOpen] = useState(false);
@@ -243,38 +263,6 @@ function UploadPageHeader() {
 // ambient reef backdrop used by the dashboard and insights pages.
 const UploadPageFrame = OceanPageFrame;
 
-function GuestUploadPage() {
-  return (
-    <UploadPageFrame>
-      <UploadPageHeader />
-      <section className="max-w-2xl border-l-2 border-primary/50 pl-6 py-1">
-        <SectionTitle>Login to build a run</SectionTitle>
-        <p className="mt-2 text-base leading-relaxed text-muted-foreground sm:text-lg">
-          Signed-in users can upload Instagram, LinkedIn, and Reddit exports, grow their coral, and
-          track how each run changes the reef.
-        </p>
-        <ol className="mt-5 space-y-2 text-sm text-muted-foreground">
-          <li className="flex gap-3">
-            <span className="font-semibold text-accent">1</span>
-            Upload raw exports — we parse and save them to your library
-          </li>
-          <li className="flex gap-3">
-            <span className="font-semibold text-accent">2</span>
-            Confirm each file&apos;s source (Instagram, LinkedIn, or Reddit)
-          </li>
-          <li className="flex gap-3">
-            <span className="font-semibold text-accent">3</span>
-            Run analysis to grow your coral on the dashboard
-          </li>
-        </ol>
-        <Button asChild variant="outline" className={cn(LANDING_BUTTON, "mt-6")}>
-          <Link to="/login">Login to continue →</Link>
-        </Button>
-      </section>
-    </UploadPageFrame>
-  );
-}
-
 function isKnownPlatform(platform: string): platform is SocialPlatform {
   return PLATFORMS.some((p) => p.key === platform);
 }
@@ -347,7 +335,7 @@ function SavedFilesList({ uploads }: { uploads: Upload[] }) {
         {uploads.map((upload) => (
           <li
             key={upload.upload_id}
-            className="inline-flex w-64 max-w-full items-center rounded-[10px] border border-foreground/20 bg-background/80 px-3 py-1.5"
+            className={cn("inline-flex w-64 max-w-full items-center px-3 py-1.5", UPLOAD_CHIP)}
           >
             <p
               className="truncate text-sm leading-[1.65] text-foreground/95"
@@ -366,19 +354,24 @@ function DraftFileRow({
   row,
   saving,
   onRemove,
+  showReason = false,
 }: {
   row: DraftFile;
   saving: boolean;
   onRemove: (id: string) => void;
+  showReason?: boolean;
 }) {
+  const reason =
+    row.error && (showReason || !isMetadataOnlyError(row.error)) ? row.error : null;
+
   return (
-    <li className="inline-flex w-64 max-w-full items-center gap-1.5 rounded-[10px] border border-foreground/20 bg-background/80 py-1 pl-3 pr-1">
+    <li className={cn("inline-flex w-64 max-w-full items-center gap-1.5 py-1 pl-3 pr-1", UPLOAD_CHIP)}>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm leading-[1.65] text-foreground/95" title={row.file.name}>
           {row.file.name}
         </p>
-        {row.error ? (
-          <p className="break-words text-xs text-primary">{row.error}</p>
+        {reason ? (
+          <p className="break-words text-xs text-primary">{reason}</p>
         ) : null}
       </div>
       <Button
@@ -414,7 +407,13 @@ function UnsupportedFilesList({
       <p className="text-sm font-bold leading-[1.65] text-foreground/95">Unsupported files, please delete them</p>
       <ul className="flex flex-wrap gap-2">
         {rows.map((row) => (
-          <DraftFileRow key={row.id} row={row} saving={saving} onRemove={onRemove} />
+          <DraftFileRow
+            key={row.id}
+            row={row}
+            saving={saving}
+            onRemove={onRemove}
+            showReason
+          />
         ))}
       </ul>
     </div>
@@ -438,7 +437,8 @@ function SourceChip({
         event.dataTransfer.effectAllowed = "move";
       }}
       className={cn(
-        "flex items-center gap-2 rounded-[10px] border border-foreground/20 bg-background/80 px-3 py-1.5",
+        "flex w-full items-center gap-2 px-3 py-1.5",
+        UPLOAD_CHIP,
         disabled || updating ? "opacity-60" : "cursor-grab active:cursor-grabbing",
       )}
     >
@@ -555,25 +555,41 @@ function SourceSortBoard({
 
 export function UploadPage() {
   const { user } = useAuth();
-  const { isGuest, withAuth, loading: authLoading } = useRequireAuth();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const idPrefix = useId();
 
   const history = useAnalysisHistory(user?.uid);
   const uploadsState = useUploads(user?.uid);
-  const [draft, setDraft] = useState<DraftFile[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [progress, setProgress] = useState<string | null>(null);
-  const [reviewUploads, setReviewUploads] = useState<Upload[] | null>(null);
-  const [runName, setRunName] = useState("");
-  const [activeStep, setActiveStep] = useState(1);
-  const [updatingPlatformId, setUpdatingPlatformId] = useState<string | null>(null);
-  /** After Ingest, hide the dropzone until the user chooses Back. */
-  const [uploadOpen, setUploadOpen] = useState(true);
-  const [completedAnalysisId, setCompletedAnalysisId] = useState<string | null>(null);
-  const uploadDraftSnapshotRef = useRef<DraftFile[]>([]);
+  const {
+    draft,
+    setDraft,
+    error,
+    setError,
+    saving,
+    setSaving,
+    progress,
+    setProgress,
+    reviewUploads,
+    setReviewUploads,
+    runName,
+    setRunName,
+    activeStep,
+    setActiveStep,
+    updatingPlatformId,
+    setUpdatingPlatformId,
+    uploadOpen,
+    setUploadOpen,
+    completedAnalysisId,
+    setCompletedAnalysisId,
+    uploadDraftSnapshotRef,
+    resetUploadFlow,
+  } = useUploadFlow();
+  const uploadFlowRef = useRef<HTMLDivElement>(null);
+  const lockedRunsPanelHeightRef = useRef<number | null>(readStoredRunsPanelHeight());
+  const [lockedRunsPanelHeight, setLockedRunsPanelHeight] = useState<number | null>(
+    () => lockedRunsPanelHeightRef.current,
+  );
 
   const addFiles = useCallback(
     async (files: FileList | null) => {
@@ -616,11 +632,17 @@ export function UploadPage() {
       }
 
       if (nextRows.length) {
-        setDraft((prev) => [...prev, ...nextRows]);
+        setDraft((prev) => {
+          const next = [...prev, ...nextRows];
+          if (user?.uid) {
+            cacheUploadFlowDrafts(user.uid, next, uploadDraftSnapshotRef.current);
+          }
+          return next;
+        });
         setError(null);
       }
     },
-    [draft, idPrefix],
+    [draft, idPrefix, user?.uid],
   );
 
   const knownUploads = mergeUploads(reviewUploads ?? [], uploadsState.uploads);
@@ -635,18 +657,6 @@ export function UploadPage() {
       ),
     [reviewUploads, unsupportedDraft, knownUploads],
   );
-
-  if (authLoading) {
-    return (
-      <UploadPageFrame>
-        <UploadPageHeader />
-      </UploadPageFrame>
-    );
-  }
-
-  if (isGuest) {
-    return <GuestUploadPage />;
-  }
 
   const changeUploadPlatform = async (uploadId: string, platform: SocialPlatform) => {
     if (!user) return;
@@ -667,14 +677,19 @@ export function UploadPage() {
 
   const finishAnalyze = async () => {
     if (!user) return;
+    const uploadIds = (reviewUploads ?? [])
+      .map((upload) => upload.upload_id)
+      .filter((id): id is string => Boolean(id));
     setProgress("Analysing…");
     const analysis = await analyzeUploads({
       user_id: user.uid,
       persist: true,
       name: runName.trim() || undefined,
+      ...(uploadIds.length ? { upload_ids: uploadIds } : {}),
     });
 
     invalidateAnalysisCache(user.uid);
+    invalidateUploadsCache(user.uid);
     cacheAnalysis(analysis);
 
     // Advance to step 4 before any await so step 3 never paints with a blank name.
@@ -692,22 +707,10 @@ export function UploadPage() {
     await uploadsState.reload();
   };
 
-  const resetUploadFlow = () => {
-    setDraft([]);
-    setReviewUploads(null);
-    setRunName("");
-    setUploadOpen(true);
-    setError(null);
-    setProgress(null);
-    setCompletedAnalysisId(null);
-    uploadDraftSnapshotRef.current = [];
-    setActiveStep(1);
-  };
-
   const viewCoral = () => {
     if (completedAnalysisId) {
       navigate(`/dashboard?run=${encodeURIComponent(completedAnalysisId)}`, {
-        state: { analysisId: completedAnalysisId, showDiff: true },
+        state: { analysisId: completedAnalysisId },
       });
       return;
     }
@@ -726,22 +729,19 @@ export function UploadPage() {
     if (!user || draft.length === 0) return;
 
     uploadDraftSnapshotRef.current = cloneDraftForUpload(draft);
-    const toIngest = draft.filter(
-      (row) => !row.error && !isAlreadySaved(row.contentHash, knownUploads),
-    );
+    const toIngest = draft.filter((row) => !row.error);
     if (toIngest.length === 0) {
-      const failed = draft.filter((row) => row.error);
+      const failed = draft.filter((row) => Boolean(row.error));
       setDraft(failed);
       setUploadOpen(false);
       setError(null);
       return;
     }
 
-    setUploadOpen(false);
     setSaving(true);
     setError(null);
     let succeeded: Upload[] = [...(reviewUploads ?? [])];
-    const failed: DraftFile[] = [];
+    let nextDraft = [...draft];
 
     try {
       for (let i = 0; i < toIngest.length; i++) {
@@ -749,6 +749,7 @@ export function UploadPage() {
         const existing = findUploadByHash(row.contentHash, knownUploads);
         if (existing) {
           succeeded = mergeUploads(succeeded, [existing]);
+          nextDraft = nextDraft.filter((item) => item.id !== row.id);
           continue;
         }
 
@@ -758,18 +759,34 @@ export function UploadPage() {
             runAnalysis: false,
           });
           succeeded = mergeUploads(succeeded, [result]);
+          nextDraft = nextDraft.filter((item) => item.id !== row.id);
         } catch (err) {
           const message =
             err instanceof ApiError || err instanceof Error ? err.message : "Upload failed.";
-          failed.push({ ...row, error: message });
+          if (isMetadataOnlyError(message) || isUnsupportedSourceError(message)) {
+            nextDraft = nextDraft.map((item) =>
+              item.id === row.id ? { ...item, error: message } : item,
+            );
+            continue;
+          }
+          nextDraft = nextDraft.map((item) =>
+            item.id === row.id ? { ...item, error: message } : item,
+          );
           setError(message);
         }
       }
 
-      setDraft(failed);
+      const unsupportedAfterIngest = nextDraft.filter((row) => Boolean(row.error));
+
+      setDraft(nextDraft);
+      setError((current) => (current && isInlineIngestError(current) ? null : current));
       if (succeeded.length) {
         setReviewUploads(succeeded);
         await uploadsState.reload();
+      }
+      if (succeeded.length || unsupportedAfterIngest.length) {
+        setUploadOpen(false);
+        setError(null);
       }
     } finally {
       setSaving(false);
@@ -796,6 +813,9 @@ export function UploadPage() {
     setDraft((prev) => {
       const next = prev.filter((item) => item.id !== id);
       uploadDraftSnapshotRef.current = uploadDraftSnapshotRef.current.filter((item) => item.id !== id);
+      if (user?.uid) {
+        cacheUploadFlowDrafts(user.uid, next, uploadDraftSnapshotRef.current);
+      }
       if (!next.some((item) => item.error)) {
         setError(null);
       }
@@ -804,10 +824,9 @@ export function UploadPage() {
   };
 
   const formatError = error?.startsWith("Unsupported format") ? error : null;
-  const flowError = error && !formatError ? error : null;
-  const analyses = history.analyses;
-  const runCount = analyses.length;
-  const hasUnsupportedFiles = draft.some((row) => Boolean(row.error));
+  const flowError =
+    error && !formatError && !isInlineIngestError(error) ? error : null;
+  const hasUnsupportedFiles = unsupportedDraft.length > 0;
   const hasSupportedUploads = supportedUploads.length > 0;
   const hasIngested = hasSupportedUploads;
   const runFinished = activeStep >= 4 || Boolean(completedAnalysisId);
@@ -818,6 +837,41 @@ export function UploadPage() {
   const allSourcesConfirmed =
     activeReviewUploads.every((upload) => isKnownPlatform(upload.platform));
   const totalReviewPosts = activeReviewUploads.reduce((sum, upload) => sum + upload.post_count, 0);
+
+  useLayoutEffect(() => {
+    const node = uploadFlowRef.current;
+    if (!node) return;
+
+    const calibrate = shouldCalibrateRunsPanelHeight(activeStep, uploadOpen, draft.length);
+
+    const captureHeight = () => {
+      if (!calibrate && lockedRunsPanelHeightRef.current !== null) return;
+
+      const height = Math.round(node.getBoundingClientRect().height);
+      if (height <= 0) return;
+
+      const next =
+        calibrate && activeStep === 1 && uploadOpen && draft.length === 0
+          ? height
+          : Math.max(lockedRunsPanelHeightRef.current ?? 0, height);
+      if (next <= 0) return;
+
+      lockedRunsPanelHeightRef.current = next;
+      setLockedRunsPanelHeight(next);
+      try {
+        sessionStorage.setItem(RUNS_PANEL_HEIGHT_KEY, String(next));
+      } catch {
+        // ignore storage failures
+      }
+    };
+
+    captureHeight();
+    const observer = new ResizeObserver(captureHeight);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [activeStep, uploadOpen, draft.length]);
+
+  const runsPanelHeight = lockedRunsPanelHeight ?? RUNS_PANEL_FALLBACK_PX;
 
   const continueToSourcesStep = () => {
     if (hasUnsupportedFiles || !hasSupportedUploads) return;
@@ -836,7 +890,7 @@ export function UploadPage() {
     <UploadPageFrame>
       <UploadPageHeader />
 
-      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:gap-10 xl:gap-12">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:items-start lg:gap-10 xl:gap-12">
         {/* Main flow — full column width, no half-width caps */}
         <div className="min-w-0">
           <input
@@ -851,7 +905,7 @@ export function UploadPage() {
             }}
           />
 
-          <div className="upload-flow">
+          <div ref={uploadFlowRef} className="upload-flow">
           <StepRail
             n={1}
             active={activeStep === 1}
@@ -870,6 +924,11 @@ export function UploadPage() {
             {formatError ? (
               <Alert variant="destructive" className="mb-4">
                 <AlertDescription role="alert">{formatError}</AlertDescription>
+              </Alert>
+            ) : null}
+            {flowError && uploadOpen ? (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription role="alert">{flowError}</AlertDescription>
               </Alert>
             ) : null}
 
@@ -900,9 +959,10 @@ export function UploadPage() {
                         variant="outline"
                         className={LANDING_BUTTON}
                         disabled={saving || hasUnsupportedFiles}
-                        onClick={() => withAuth(() => handleIngest())}
+                        aria-busy={saving}
+                        onClick={() => void handleIngest()}
                       >
-                        Ingest
+                        {saving ? "Ingesting…" : "Ingest"}
                       </Button>
                     </div>
                   </div>
@@ -934,7 +994,7 @@ export function UploadPage() {
                     variant="outline"
                     className={LANDING_BUTTON}
                     disabled={saving || hasUnsupportedFiles || !hasSupportedUploads}
-                    onClick={() => withAuth(() => continueToSourcesStep())}
+                    onClick={() => continueToSourcesStep()}
                   >
                     Continue
                   </Button>
@@ -1021,7 +1081,7 @@ export function UploadPage() {
                 variant="outline"
                 className={LANDING_BUTTON}
                 disabled={saving || !hasIngested || draft.length > 0 || totalReviewPosts === 0}
-                onClick={() => withAuth(() => void confirmGrow())}
+                onClick={() => void confirmGrow()}
               >
                 Upload
               </Button>
@@ -1061,67 +1121,20 @@ export function UploadPage() {
           </div>
         </div>
 
-        <aside className="min-w-0 lg:pl-2">
-          <Card className="rounded-2xl border-border/40 bg-card/25 py-4 lg:sticky lg:top-24">
-            <CardHeader className="px-4">
-              <CardTitle className="text-[0.975rem] font-bold tracking-tight">My Runs</CardTitle>
-            </CardHeader>
-
-            <CardContent className="px-4">
-              {history.status === "loading" ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
-              ) : history.status === "error" ? (
-                <p className="text-sm text-primary">{history.error}</p>
-              ) : analyses.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No runs yet.</p>
-              ) : (
-                <ScrollArea className="max-h-[28rem]">
-                  <ul className="space-y-0 divide-y divide-border/40 pr-3">
-                    {analyses.map((analysis, index) => {
-                      const runNumber = runCount - index;
-                      const older = analyses[index + 1];
-                      const postDelta = older ? analysis.post_count - older.post_count : null;
-                      const topicDelta = older ? topicCount(analysis) - topicCount(older) : null;
-                      const isLatest = index === 0;
-
-                      return (
-                        <li key={analysis.analysis_id} className="py-4 first:pt-0">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className="min-w-0 break-words font-semibold">
-                              {formatRunLabel(analysis, runNumber)}
-                              {isLatest ? (
-                                <Badge
-                                  variant="outline"
-                                  className="ml-2 border-accent/40 text-[0.65rem] font-bold tracking-wider text-accent"
-                                >
-                                  LATEST
-                                </Badge>
-                              ) : null}
-                            </p>
-                          </div>
-                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            {formatShortDate(analysis.created_at)} · {platformsLabel(analysis)} ·{" "}
-                            {analysis.post_count.toLocaleString()} posts
-                            {postDelta !== null && postDelta !== 0 ? (
-                              <span className="text-accent">
-                                {" "}
-                                ({postDelta > 0 ? "+" : ""}
-                                {postDelta}
-                                {topicDelta !== null && topicDelta !== 0
-                                  ? ` · ${topicDelta > 0 ? "+" : ""}${topicDelta} topics`
-                                  : ""}
-                                )
-                              </span>
-                            ) : null}
-                          </p>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
+        <aside className="flex min-w-0 shrink-0 flex-col self-start lg:pl-2">
+          <MyRunsPanel
+            history={history}
+            userId={user?.uid}
+            onRunDeleted={async () => {
+              if (user?.uid) {
+                invalidateAnalysisCache(user.uid);
+                invalidateUploadsCache(user.uid);
+              }
+              await history.reload();
+              await uploadsState.reload();
+            }}
+            panelHeight={runsPanelHeight}
+          />
         </aside>
       </div>
     </UploadPageFrame>

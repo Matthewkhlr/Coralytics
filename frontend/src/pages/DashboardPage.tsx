@@ -1,158 +1,70 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
-import { createShare, getAnalysis, listPostsByTopic } from "@/api/client";
-import type { Analysis, PostSummary } from "@/api/types";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { Palette } from "lucide-react";
+import type { PostInsight } from "@/api/types";
 import { DataStatusBanner } from "@/components/DataStatusBanner";
+import { PageLoadingOverlay } from "@/components/PageLoadingOverlay";
 import {
   OrganismViewport,
   type OrganismViewportHandle,
 } from "@/components/OrganismViewport";
-import { PageHeader, PageShell, PageTitle, PageDescription, SectionTitle } from "@/components/PageShell";
-import { useAuth } from "@/contexts/AuthContext";
-import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { useLatestAnalysis } from "@/hooks/useLatestAnalysis";
-import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
-import { useUploads } from "@/hooks/useUploads";
-import { formatPlatform, formatRunLabel, formatShortDate } from "@/lib/format";
+import { ReefCustomizeSheet } from "@/components/ReefCustomizeSheet";
 import {
-  formatAnalysisDiff,
-  formatSentiment,
-  organismDataForPlatform,
-  resolveOrganismData,
-  SAMPLE_ORGANISM_DATA,
-} from "@/lib/organismData";
+  ReefSidebarDropdowns,
+  type PlatformFilterOption,
+} from "@/components/ReefSidebarDropdowns";
+import { ReefPostConnector, type ConnectorPoint } from "@/components/ReefPostConnector";
+import { SelectedPostCallout } from "@/components/SelectedPostCallout";
+import { OceanPageFrame, PageHeader, PageTitle } from "@/components/PageShell";
+import { useAuth } from "@/contexts/AuthContext";
+import { useReefTheme } from "@/hooks/useReefTheme";
+import { useSelectedAnalysis } from "@/hooks/useSelectedAnalysis";
+import { CHIP_RADIUS, EXHIBIT_PANEL } from "@/lib/buttonStyles";
+import { ReefInstructionPanel } from "@/components/ReefInstructionPanel";
+import { formatPlatform } from "@/lib/format";
+import { organismDataForPlatform, resolveOrganismData } from "@/lib/organismData";
+import { REEF_SOURCE_PLATFORMS } from "@/lib/runScope";
 import { cn } from "@/lib/utils";
 
-type DashboardNavState = {
-  analysisId?: string;
-  showDiff?: boolean;
+type ConnectorLayout = {
+  from: ConnectorPoint;
+  to: ConnectorPoint;
+  ring: ConnectorPoint;
 };
-
-function downloadDataUrl(dataUrl: string, filename: string) {
-  const link = document.createElement("a");
-  link.href = dataUrl;
-  link.download = filename;
-  link.click();
-}
-
-function GuestDashboardPage() {
-  return (
-    <PageShell>
-      <PageHeader>
-        <PageTitle>Explore Your Reef</PageTitle>
-        <PageDescription>
-          Preview a sample coral below. Login to load your own runs, inspect branches, and share a
-          link.
-        </PageDescription>
-        <Link
-          to="/login"
-          className="mt-4 inline-flex px-5 py-2.5 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:brightness-110 transition"
-        >
-          Login to see your coral →
-        </Link>
-      </PageHeader>
-
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 lg:col-span-8">
-          <div className="rounded-2xl overflow-hidden border border-border/50 bg-card/40 h-[620px] p-2">
-            <OrganismViewport
-              data={SAMPLE_ORGANISM_DATA}
-              dataSource="sample"
-              appearance="dark"
-            />
-          </div>
-          <p className="mt-3 text-center text-xs text-muted-foreground">Sample reef · not your data</p>
-        </div>
-        <aside className="col-span-12 lg:col-span-4 rounded-2xl border border-border/60 bg-card p-6 flex flex-col justify-center">
-          <SectionTitle>What you unlock</SectionTitle>
-          <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
-            <li>· Your latest run’s 3D coral</li>
-            <li>· Click branches to inspect real posts</li>
-            <li>· Screenshot and shareable recruiter links</li>
-          </ul>
-          <Link
-            to="/login"
-            className="mt-6 inline-flex justify-center px-5 py-2.5 rounded-full border border-border text-sm font-semibold hover:bg-background/60 transition"
-          >
-            Login
-          </Link>
-        </aside>
-      </div>
-    </PageShell>
-  );
-}
 
 export function DashboardPage() {
   const { user } = useAuth();
-  const { isGuest, withAuth } = useRequireAuth();
-  const location = useLocation();
-  const navState = (location.state || {}) as DashboardNavState;
   const viewportRef = useRef<OrganismViewportHandle>(null);
-  const { status, analysis: latestAnalysis, error, reload } = useLatestAnalysis(user?.uid);
-  const history = useAnalysisHistory(user?.uid);
-  const uploads = useUploads(user?.uid);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const reefRef = useRef<HTMLDivElement>(null);
+  const calloutRef = useRef<HTMLDivElement>(null);
 
-  const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
-  const [selectedAnalysis, setSelectedAnalysis] = useState<Analysis | null>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const {
+    history,
+    latestStatus,
+    latestError,
+    reloadLatest,
+    analysis,
+    analysisLoading,
+    selectAnalysis,
+  } = useSelectedAnalysis(user?.uid, { requirePostInsights: true });
+
+  const reefTheme = useReefTheme(user?.uid);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const dropdownPanelRef = useRef<HTMLDivElement>(null);
+  const [sidebarCover, setSidebarCover] = useState<{ left: number; width: number } | null>(
+    null,
+  );
+
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
-  const [showDiffBanner, setShowDiffBanner] = useState(false);
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
+  const [connectorLayout, setConnectorLayout] = useState<ConnectorLayout | null>(null);
 
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
-  const [branchPosts, setBranchPosts] = useState<PostSummary[]>([]);
-  const [branchLoading, setBranchLoading] = useState(false);
-  const [branchError, setBranchError] = useState<string | null>(null);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
-  const [shareError, setShareError] = useState<string | null>(null);
-  const [sharing, setSharing] = useState(false);
-
-  useEffect(() => {
-    if (navState.analysisId) {
-      setSelectedAnalysisId(navState.analysisId);
-      setShowDiffBanner(Boolean(navState.showDiff));
-    } else if (latestAnalysis?.analysis_id && !selectedAnalysisId) {
-      setSelectedAnalysisId(latestAnalysis.analysis_id);
-    }
-  }, [navState.analysisId, navState.showDiff, latestAnalysis?.analysis_id, selectedAnalysisId]);
-
-  useEffect(() => {
-    if (!user || !selectedAnalysisId) {
-      setSelectedAnalysis(null);
-      return;
-    }
-
-    if (latestAnalysis?.analysis_id === selectedAnalysisId) {
-      setSelectedAnalysis(latestAnalysis);
-      return;
-    }
-
-    const fromHistory = history.analyses.find((a) => a.analysis_id === selectedAnalysisId);
-    if (fromHistory?.organism_data && fromHistory.post_insights) {
-      setSelectedAnalysis(fromHistory);
-      return;
-    }
-
-    let cancelled = false;
-    setAnalysisLoading(true);
-    void getAnalysis(user.uid, selectedAnalysisId)
-      .then((result) => {
-        if (!cancelled) setSelectedAnalysis(result);
-      })
-      .catch(() => {
-        if (!cancelled && latestAnalysis) setSelectedAnalysis(latestAnalysis);
-      })
-      .finally(() => {
-        if (!cancelled) setAnalysisLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user, selectedAnalysisId, latestAnalysis, history.analyses]);
-
-  const analysis = selectedAnalysis ?? latestAnalysis;
-  const baseOrganism = resolveOrganismData(analysis?.organism_data);
+  const baseOrganism = useMemo(
+    () => resolveOrganismData(analysis?.organism_data),
+    [analysis?.organism_data],
+  );
   const organismData = useMemo(
     () =>
       organismDataForPlatform(
@@ -164,326 +76,367 @@ export function DashboardPage() {
   );
   const organismSource = baseOrganism.source;
 
-  const showBanner = !isGuest && (status === "loading" || status === "error");
+  const showBanner = latestStatus === "error";
+  const isPageLoading = latestStatus === "loading" || analysisLoading;
   const topics = organismData.topics;
-  const selectedMeta = topics.find((t) => t.name === selectedTopic) ?? null;
-  const runCount = history.analyses.length;
-  const selectedRunNumber = useMemo(() => {
-    if (!analysis) return 0;
-    const index = history.analyses.findIndex((a) => a.analysis_id === analysis.analysis_id);
-    if (index < 0) return runCount;
-    return runCount - index;
-  }, [analysis, history.analyses, runCount]);
 
-  const platformTabs = useMemo(() => {
-    const fromBreakdown = (analysis?.platform_breakdown || [])
-      .map((row) => row.platform)
-      .filter((p) => p && p !== "mixed" && p !== "unknown");
-    return [...new Set(fromBreakdown)];
+  const selectedPost = useMemo<PostInsight | null>(() => {
+    if (!highlightedPostId || !analysis?.post_insights?.length) return null;
+    const platformLower = platformFilter?.toLowerCase().trim();
+    return (
+      analysis.post_insights.find((post) => {
+        if (post.id !== highlightedPostId) return false;
+        if (platformLower && (post.platform ?? "").toLowerCase() !== platformLower) {
+          return false;
+        }
+        return true;
+      }) ?? null
+    );
+  }, [highlightedPostId, analysis?.post_insights, platformFilter]);
+
+  const selectedPostFlags = useMemo(() => {
+    if (!highlightedPostId) return [];
+    return (
+      analysis?.red_flags?.flags?.filter((flag) => flag.post_id === highlightedPostId) ?? []
+    );
+  }, [highlightedPostId, analysis?.red_flags?.flags]);
+
+  const platformOptions = useMemo<PlatformFilterOption[]>(() => {
+    const breakdown = (analysis?.platform_breakdown ?? []).filter(
+      (row) =>
+        row.platform &&
+        row.platform !== "mixed" &&
+        row.platform !== "unknown" &&
+        row.platform !== "sample",
+    );
+    const countByPlatform = new Map(breakdown.map((row) => [row.platform, row.post_count]));
+
+    return [
+      { key: null, label: "All" },
+      ...REEF_SOURCE_PLATFORMS.map((platform) => ({
+        key: platform,
+        label: formatPlatform(platform),
+        postCount: countByPlatform.get(platform) ?? 0,
+      })),
+    ];
   }, [analysis?.platform_breakdown]);
 
-  const uploadCount = analysis?.upload_ids?.length ?? uploads.uploads.length;
-  const dateRangeLabel = useMemo(() => {
-    const earliest = analysis?.date_range?.earliest;
-    const latest = analysis?.date_range?.latest;
-    if (!earliest && !latest) return null;
-    if (earliest && latest) {
-      return `${formatShortDate(earliest)} – ${formatShortDate(latest)}`;
+  const selectedAnalysisId = analysis?.analysis_id ?? null;
+  const hasRuns = history.status === "success" && history.analyses.length > 0;
+  const showEmptyReef =
+    !isPageLoading && (history.status === "empty" || latestStatus === "empty" || !hasRuns);
+
+  const showEmptyPlatform =
+    Boolean(platformFilter) &&
+    !isPageLoading &&
+    !showEmptyReef &&
+    organismData.topics.length === 0 &&
+    (organismData.posts?.length ?? 0) === 0;
+
+  const clearSelectedPost = useCallback(() => {
+    setHighlightedPostId(null);
+    setConnectorLayout(null);
+  }, []);
+
+  const handleBranchClick = useCallback(() => {
+    clearSelectedPost();
+  }, [clearSelectedPost]);
+
+  const handlePostClick = useCallback((_topic: string, postId: string) => {
+    setHighlightedPostId(postId);
+  }, []);
+
+  const updateConnector = useCallback(() => {
+    if (!highlightedPostId || !gridRef.current || !reefRef.current || !calloutRef.current) {
+      setConnectorLayout(null);
+      return;
     }
-    return formatShortDate(earliest || latest || undefined);
-  }, [analysis?.date_range]);
 
-  const diffText = formatAnalysisDiff(analysis?.diff);
+    const screenPos = viewportRef.current?.getPostScreenPosition(highlightedPostId);
+    if (!screenPos) {
+      setConnectorLayout(null);
+      return;
+    }
 
-  const handleBranchClick = useCallback(
-    async (topic: string) => {
-      setSelectedTopic(topic);
-      if (!user) {
-        setBranchPosts([]);
-        setBranchError("Login to load posts for this topic.");
-        return;
-      }
-      setBranchLoading(true);
-      setBranchError(null);
-      try {
-        const { posts } = await listPostsByTopic(
-          user.uid,
-          topic,
-          20,
-          platformFilter || undefined,
-        );
-        setBranchPosts(posts);
-      } catch (err) {
-        setBranchError(err instanceof Error ? err.message : "Failed to load posts.");
-        setBranchPosts([]);
-      } finally {
-        setBranchLoading(false);
-      }
-    },
-    [user, platformFilter],
-  );
+    const grid = gridRef.current.getBoundingClientRect();
+    const reef = reefRef.current.getBoundingClientRect();
+    const callout = calloutRef.current.getBoundingClientRect();
+    const targetY = callout.top - grid.top + Math.min(callout.height * 0.2, 40);
+
+    setConnectorLayout({
+      from: {
+        x: screenPos.x - grid.left,
+        y: screenPos.y - grid.top,
+      },
+      to: {
+        x: callout.left - grid.left - 8,
+        y: targetY,
+      },
+      ring: {
+        x: screenPos.x - reef.left,
+        y: screenPos.y - reef.top,
+      },
+    });
+  }, [highlightedPostId]);
+
+  useLayoutEffect(() => {
+    updateConnector();
+    window.addEventListener("resize", updateConnector);
+    window.addEventListener("scroll", updateConnector, true);
+    return () => {
+      window.removeEventListener("resize", updateConnector);
+      window.removeEventListener("scroll", updateConnector, true);
+    };
+  }, [updateConnector, selectedPost, highlightedPostId]);
 
   useEffect(() => {
-    setSelectedTopic(null);
-    setBranchPosts([]);
-    setBranchError(null);
-  }, [platformFilter, selectedAnalysisId]);
+    setPlatformFilter(null);
+    clearSelectedPost();
+  }, [selectedAnalysisId, clearSelectedPost]);
 
-  if (isGuest) {
-    return <GuestDashboardPage />;
-  }
+  useEffect(() => {
+    clearSelectedPost();
+  }, [platformFilter, clearSelectedPost]);
 
-  const handleExportPng = () => {
-    withAuth(() => {
-      const dataUrl = viewportRef.current?.exportPng();
-      if (dataUrl) downloadDataUrl(dataUrl, "coralytics-coral.png");
-    });
+  useEffect(() => {
+    if (!highlightedPostId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") clearSelectedPost();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [highlightedPostId, clearSelectedPost]);
+
+  const handleSnapshotSelect = (analysisId: string) => {
+    selectAnalysis(analysisId);
   };
 
-  const handleCreateShare = async () => {
-    if (!user || !analysis) return;
-    setSharing(true);
-    setShareError(null);
-    try {
-      const record = await createShare({
-        user_id: user.uid,
-        analysis_id: analysis.analysis_id,
-      });
-      const url = `${window.location.origin}/view/${record.token}`;
-      setShareUrl(url);
-      await navigator.clipboard.writeText(url);
-    } catch (err) {
-      setShareError(err instanceof Error ? err.message : "Failed to create share link.");
-    } finally {
-      setSharing(false);
+  const handleCustomizeOpen = () => {
+    reefTheme.beginDraft();
+    setCustomizeOpen(true);
+  };
+
+  const handleCustomizeOpenChange = (open: boolean) => {
+    if (open) {
+      reefTheme.beginDraft();
+      setCustomizeOpen(true);
+      return;
     }
+    reefTheme.cancelDraft();
+    setCustomizeOpen(false);
+    setSidebarCover(null);
   };
+
+  useLayoutEffect(() => {
+    if (!customizeOpen) {
+      setSidebarCover(null);
+      return;
+    }
+
+    const updateCover = () => {
+      const panel = dropdownPanelRef.current;
+      if (!panel) return;
+
+      const isStacked = window.matchMedia("(max-width: 1023px)").matches;
+      if (isStacked) {
+        setSidebarCover(null);
+        return;
+      }
+
+      const panelRect = panel.getBoundingClientRect();
+      setSidebarCover({
+        left: panelRect.left,
+        width: window.innerWidth - panelRect.left,
+      });
+    };
+
+    updateCover();
+    const observer = new ResizeObserver(updateCover);
+    if (dropdownPanelRef.current) observer.observe(dropdownPanelRef.current);
+    if (gridRef.current) observer.observe(gridRef.current);
+    window.addEventListener("resize", updateCover);
+    window.addEventListener("scroll", updateCover, true);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateCover);
+      window.removeEventListener("scroll", updateCover, true);
+    };
+  }, [customizeOpen]);
 
   return (
-    <PageShell>
+    <OceanPageFrame>
       {showBanner ? (
         <div className="mb-6">
-          <DataStatusBanner
-            status={status === "loading" ? "loading" : "error"}
-            error={error}
-            onRetry={() => withAuth(() => void reload())}
-          />
+          <DataStatusBanner status="error" error={latestError} onRetry={() => void reloadLatest()} />
         </div>
       ) : null}
 
-      <PageHeader className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <PageLoadingOverlay loading={isPageLoading} className="min-h-[60vh]">
+      <PageHeader className="mb-6">
         <PageTitle>Explore Your Reef</PageTitle>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={handleExportPng}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border text-sm hover:bg-card transition"
-          >
-            <Download size={16} />
-            Screenshot
-          </button>
-          <button
-            type="button"
-            disabled={sharing || !analysis}
-            onClick={() => withAuth(() => void handleCreateShare())}
-            className="px-4 py-2 rounded-full border border-border text-sm hover:bg-card transition disabled:opacity-50"
-          >
-            {sharing ? "Creating…" : "Share link"}
-          </button>
-        </div>
       </PageHeader>
 
-      {shareUrl ? (
-        <p className="mb-4 text-sm text-accent">
-          Copied:{" "}
-          <a href={shareUrl} className="underline break-all">
-            {shareUrl}
-          </a>
-        </p>
-      ) : null}
-      {shareError ? <p className="mb-4 text-sm text-primary">{shareError}</p> : null}
+      <div
+        ref={gridRef}
+        className="relative grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:gap-10 xl:gap-12"
+      >
+        {connectorLayout ? (
+          <ReefPostConnector
+            className="hidden lg:block"
+            from={connectorLayout.from}
+            to={connectorLayout.to}
+          />
+        ) : null}
 
-      {analysis && runCount > 0 ? (
-        <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-          <label className="inline-flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-accent">Run</span>
-            <select
-              value={analysis.analysis_id}
-              onChange={(e) => {
-                setSelectedAnalysisId(e.target.value);
-                setShowDiffBanner(false);
-              }}
-              className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground"
+        <div className="min-w-0 space-y-6">
+          <div>
+            <div
+              ref={reefRef}
+              className="relative h-[min(64vh,636px)] min-h-[436px] overflow-hidden border border-foreground/20 bg-background/25"
             >
-              {history.analyses.map((item, index) => {
-                const runNumber = runCount - index;
-                return (
-                  <option key={item.analysis_id} value={item.analysis_id}>
-                    {formatRunLabel(item, runNumber)} · {item.post_count.toLocaleString()} posts
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-          <span>
-            {formatRunLabel(analysis, selectedRunNumber)} · {formatShortDate(analysis.created_at)} ·{" "}
-            {analysis.post_count.toLocaleString()} posts · {uploadCount} upload
-            {uploadCount === 1 ? "" : "s"}
-            {dateRangeLabel ? ` · ${dateRangeLabel}` : null}
-          </span>
-          <Link to="/upload" className="text-accent hover:underline">
-            Add data
-          </Link>
-        </div>
-      ) : null}
-
-      {showDiffBanner && diffText ? (
-        <div className="mb-4 rounded-xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-2">
-          <p>
-            <span className="font-semibold text-accent">What changed: </span>
-            {diffText}
-          </p>
-          <button
-            type="button"
-            onClick={() => setShowDiffBanner(false)}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Dismiss
-          </button>
-        </div>
-      ) : null}
-
-      {platformTabs.length > 0 ? (
-        <div className="mb-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setPlatformFilter(null)}
-            className={cn(
-              "px-3 py-1.5 rounded-full border text-xs font-semibold transition",
-              platformFilter === null
-                ? "border-accent bg-accent/15 text-foreground"
-                : "border-border text-muted-foreground hover:text-foreground",
-            )}
-          >
-            All
-          </button>
-          {platformTabs.map((platform) => (
-            <button
-              key={platform}
-              type="button"
-              onClick={() => setPlatformFilter(platform)}
-              className={cn(
-                "px-3 py-1.5 rounded-full border text-xs font-semibold transition",
-                platformFilter === platform
-                  ? "border-accent bg-accent/15 text-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {formatPlatform(platform)}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 lg:col-span-8">
-          <div className="rounded-2xl overflow-hidden border border-border/50 bg-card/40 h-[620px] p-2">
-            <OrganismViewport
-              ref={viewportRef}
-              data={organismData}
-              dataSource={organismSource}
-              appearance="dark"
-              isLoading={status === "loading" || analysisLoading}
-              onBranchClick={(topic) => void handleBranchClick(topic)}
-            />
-          </div>
-          <div className="mt-4 flex flex-wrap gap-3 justify-center text-xs">
-            <Legend swatch="var(--sentiment-positive)" label="Positive sentiment" />
-            <Legend swatch="var(--sentiment-neutral)" label="Neutral" />
-            <Legend swatch="var(--sentiment-negative)" label="Negative / risky" />
-            <span className="text-muted-foreground">
-              · Trunk height = account age · Branch thickness = post volume
-            </span>
-          </div>
-        </div>
-
-        <aside className="col-span-12 lg:col-span-4 rounded-2xl border border-border/60 bg-card p-6 min-h-[400px]">
-          {selectedTopic ? (
-            <div>
-              <div className="text-accent text-xs font-bold tracking-[0.2em]">TOPIC</div>
-              <h2 className="mt-2 text-2xl font-bold">{selectedTopic}</h2>
-              {selectedMeta ? (
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="rounded-xl bg-background/60 p-3">
-                    <div className="text-2xl font-bold">{selectedMeta.postVolume}</div>
-                    <div className="text-xs text-muted-foreground">Posts</div>
-                  </div>
-                  <div className="rounded-xl bg-background/60 p-3">
-                    <div
-                      className={`text-2xl font-bold ${
-                        selectedMeta.sentiment < 0 ? "text-primary" : "text-accent"
-                      }`}
-                    >
-                      {formatSentiment(selectedMeta.sentiment)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Sentiment</div>
-                  </div>
+              <button
+                type="button"
+                className={cn(
+                  "absolute top-3 right-3 z-10 inline-flex size-9 items-center justify-center border border-foreground/25 bg-background/55 text-foreground/85 backdrop-blur-sm transition hover:border-foreground/45 hover:bg-background/75 hover:text-foreground",
+                  CHIP_RADIUS,
+                )}
+                aria-label="Customize reef"
+                onClick={handleCustomizeOpen}
+              >
+                <Palette className="size-4" aria-hidden />
+              </button>
+              <OrganismViewport
+                ref={viewportRef}
+                data={organismData}
+                dataSource={organismSource}
+                appearance="dark"
+                reefTheme={reefTheme.activeTheme}
+                frameless
+                isLoading={latestStatus === "loading" || analysisLoading}
+                isEmpty={showEmptyReef}
+                onBranchClick={handleBranchClick}
+                onPostClick={handlePostClick}
+                onSceneChange={updateConnector}
+              />
+              {connectorLayout ? (
+                <span
+                  className="reef-post-callout__anchor"
+                  style={{ left: connectorLayout.ring.x, top: connectorLayout.ring.y }}
+                  aria-hidden
+                />
+              ) : null}
+              {showEmptyPlatform ? (
+                <div
+                  className="absolute inset-0 flex items-center justify-center bg-background/55 px-6 text-center backdrop-blur-[2px]"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    No posts from {formatPlatform(platformFilter!)} in this run.
+                  </p>
                 </div>
               ) : null}
-
-              <div className="mt-6 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                  Sample posts
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTopic(null)}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Clear
-                </button>
-              </div>
-
-              {branchLoading ? (
-                <p className="mt-3 text-sm text-muted-foreground">Loading posts…</p>
-              ) : null}
-              {branchError ? <p className="mt-3 text-sm text-primary">{branchError}</p> : null}
-
-              <div className="mt-3 space-y-3 max-h-[320px] overflow-y-auto pr-1">
-                {!branchLoading && !branchError && branchPosts.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No posts found for this topic.</p>
-                ) : null}
-                {branchPosts.map((post) => (
-                  <div
-                    key={post.id ?? post.content}
-                    className="rounded-xl bg-background/50 p-3 border border-border/50"
+            </div>
+            <div className="mt-3">
+              <ReefInstructionPanel />
+              {topics.length === 0 && !showEmptyReef ? (
+                <p className="mt-3 text-sm leading-[1.65] text-foreground/95">
+                  No topics yet.{" "}
+                  <Link
+                    to="/upload"
+                    className="font-medium uppercase tracking-[0.18em] text-foreground/80 hover:text-foreground"
                   >
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{formatPlatform(post.platform ?? "unknown")}</span>
-                      <span>{formatSentiment(post.sentiment_compound)}</span>
-                    </div>
-                    <p className="mt-1.5 text-sm">{post.content}</p>
-                  </div>
-                ))}
-              </div>
+                    Upload data
+                  </Link>
+                </p>
+              ) : null}
             </div>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground">
-              <p className="max-w-xs mx-auto">
-                Click a branch on the organism to inspect what grew it.
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-3 text-xs">
+              <Legend sentiment="positive" label="Positive" />
+              <Legend sentiment="neutral" label="Neutral" />
+              <Legend sentiment="negative" label="Negative / Risky" />
+            </div>
+          </div>
+        </div>
+
+        <aside ref={sidebarRef} className="flex min-w-0 flex-col gap-4 lg:pl-2">
+          <div
+            ref={dropdownPanelRef}
+            className={cn(EXHIBIT_PANEL, "p-4 lg:sticky lg:top-24")}
+          >
+            <ReefSidebarDropdowns
+              analyses={history.analyses}
+              selectedAnalysisId={selectedAnalysisId}
+              onRunSelect={handleSnapshotSelect}
+              platformFilter={platformFilter}
+              onPlatformChange={setPlatformFilter}
+              platformOptions={platformOptions}
+            />
+
+            {showEmptyPlatform ? (
+              <p className="mt-4 text-sm leading-[1.65] text-foreground/95">
+                No posts from {formatPlatform(platformFilter!)} in this run.
               </p>
-            </div>
-          )}
+            ) : null}
+          </div>
+
+          {highlightedPostId && analysisLoading ? (
+            <p className="text-sm text-muted-foreground">Loading post…</p>
+          ) : highlightedPostId && selectedPost ? (
+            <SelectedPostCallout
+              ref={calloutRef}
+              post={selectedPost}
+              flags={selectedPostFlags}
+              onClose={clearSelectedPost}
+            />
+          ) : highlightedPostId ? (
+            <p className="text-sm text-muted-foreground">
+              Could not find that post in the current run.
+            </p>
+          ) : null}
         </aside>
       </div>
-    </PageShell>
+      </PageLoadingOverlay>
+
+      <ReefCustomizeSheet
+        open={customizeOpen}
+        draft={reefTheme.draft ?? reefTheme.settings}
+        saving={reefTheme.saving}
+        coverRect={sidebarCover}
+        onOpenChange={handleCustomizeOpenChange}
+        onDraftChange={reefTheme.updateDraft}
+        onSave={reefTheme.saveDraft}
+        onCancel={reefTheme.cancelDraft}
+        onReset={reefTheme.resetDraft}
+      />
+    </OceanPageFrame>
   );
 }
 
-function Legend({ swatch, label }: { swatch: string; label: string }) {
+function Legend({
+  sentiment,
+  label,
+}: {
+  sentiment: "positive" | "neutral" | "negative";
+  label: string;
+}) {
+  const colorClass =
+    sentiment === "positive"
+      ? "text-sentiment-positive"
+      : sentiment === "neutral"
+        ? "text-sentiment-neutral"
+        : "text-sentiment-negative";
+  const swatchClass =
+    sentiment === "positive"
+      ? "bg-sentiment-positive"
+      : sentiment === "neutral"
+        ? "bg-sentiment-neutral"
+        : "bg-sentiment-negative";
+
   return (
-    <span className="flex items-center gap-1.5">
-      <span className="w-3 h-3 rounded-full" style={{ background: swatch }} />
+    <span className={cn("flex items-center gap-1.5", colorClass)}>
+      <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", swatchClass)} />
       {label}
     </span>
   );

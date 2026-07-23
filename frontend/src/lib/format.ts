@@ -11,8 +11,29 @@ export function formatShortDate(iso: string | undefined) {
 
 export function formatPlatform(platform: string) {
   if (!platform || platform === "mixed") return "Mixed";
+  if (platform === "sample") return "Pasted data";
   return platform.charAt(0).toUpperCase() + platform.slice(1);
 }
+
+/** Human label for a coral dot — posts, comments, shares, and other exported rows. */
+export function formatActivityType(postType?: string | null): string {
+  switch ((postType ?? "").toLowerCase()) {
+    case "comment":
+      return "Comment";
+    case "reply":
+      return "Reply";
+    case "share":
+      return "Share";
+    case "post":
+      return "Post";
+    default:
+      return "Activity";
+  }
+}
+
+/** Legend line for coral dots under the reef viewport. */
+export const CORAL_DOT_LEGEND =
+  "Beads = posts (click to open)";
 
 /** Display label for an analysis run - custom name or datetime fallback. */
 export function formatRunLabel(

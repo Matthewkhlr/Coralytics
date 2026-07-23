@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from app.models.persistence import parse_timestamp
 from app.services import firestore_service, privacy_service
 
 
@@ -25,17 +26,36 @@ def create_share(
         user_id=user_id,
         analysis_id=analysis_id,
         payload=share_payload,
-        expires_at=expires_at.isoformat(),
+        expires_at=expires_at,
     )
 
 
 def get_public_share(token: str) -> dict[str, Any]:
     share = firestore_service.get_share(token)
-    expires_at = share.get("expires_at")
+    if share.get("revoked"):
+        raise KeyError("Share link has been revoked")
+
+    expires_at = share.get("expires_at") or share.get("expire_at")
     if expires_at:
-        expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > expiry:
+        expiry = parse_timestamp(expires_at)
+        if expiry is not None and datetime.now(timezone.utc) > expiry:
             raise KeyError("Share link has expired")
-    return share
+
+    # Never expose owner uid on the public response.
+    public = dict(share)
+    public.pop("user_id", None)
+    payload = public.get("payload")
+    if isinstance(payload, dict):
+        cleaned = dict(payload)
+        cleaned.pop("user_id", None)
+        cleaned.pop("upload_ids", None)
+        public["payload"] = cleaned
+    return public
+
+
+def revoke_share(user_id: str, token: str) -> dict[str, Any]:
+    return firestore_service.revoke_share(token, user_id=user_id)
+
+
+def delete_share(user_id: str, token: str) -> dict[str, Any]:
+    return firestore_service.delete_share(token, user_id=user_id)

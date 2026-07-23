@@ -1,24 +1,14 @@
-import { AlertCircle, LoaderCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 type DataStatusBannerProps = {
-  status: "loading" | "empty" | "error";
+  status: "empty" | "error";
   error?: string | null;
   onRetry?: () => void;
 };
 
 export function DataStatusBanner({ status, error, onRetry }: DataStatusBannerProps) {
-  if (status === "loading") {
-    return (
-      <Alert className="mb-6">
-        <LoaderCircle className="spin-icon" />
-        <AlertTitle>Loading</AlertTitle>
-        <AlertDescription>Fetching your latest analysis…</AlertDescription>
-      </Alert>
-    );
-  }
-
   if (status === "empty") {
     return (
       <Alert className="mb-6">

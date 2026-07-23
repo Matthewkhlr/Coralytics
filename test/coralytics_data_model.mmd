@@ -1,54 +1,133 @@
 erDiagram
     direction TB
 
-    user ||--o{ upload : owns
+    user ||--o{ raw_upload : owns
     user ||--o{ analysis : owns
-    upload ||--o{ post : contains
-    analysis ||--o{ analysis_upload : sources
-    upload ||--o{ analysis_upload : feeds
+    user ||--o| privacy_settings : configures
+    user ||--o{ content_hash_claim : dedupes
+    user ||--o{ username : claims
+    raw_upload ||--o{ normalized_post : contains
+    raw_upload ||--o{ legacy_file : may_retain
+    raw_upload ||--o| object_storage : stores_bytes
+    analysis ||--o{ post_insights_chunk : may_split
+    analysis ||--o| evolution_snapshot : tracks
+    user ||--o{ share : publishes
 
     user {
-        string user_id PK "Firebase Auth UID and Firestore path root"
+        string user_id PK "Firebase Auth UID"
+        string username "Canonical handle on profile doc"
+        string email "Account email"
+        int schema_version "2"
     }
 
-    upload {
-        string upload_id PK "UUID for one ingested export batch"
-        string user_id FK "Owner linked to user"
+    username {
+        string username PK "Normalized unique handle"
+        string uid FK "Owner uid"
+        string email "Login email private via API"
+        timestamp created_at "Firestore timestamp"
+        int schema_version "2"
+    }
+
+    raw_upload {
+        string upload_id PK "UUID for one ingested export"
+        string user_id FK "Owner"
         string platform "instagram linkedin reddit sample or mixed"
         string filename "Original uploaded file name"
-        int post_count "Count of normalized items saved"
+        string status "pending ready failed"
+        int schema_version "2 for hybrid model"
+        string content_hash "SHA-256 of original bytes"
+        bool has_normalized_posts "True when posts subcollection written"
+        map object_storage "bucket path checksum size"
+        int post_count "Count of normalized items"
         int comment_count "Count of comments and replies"
-        string created_at "ISO 8601 UTC when upload was saved"
-        string parsed_at "ISO 8601 UTC when ingestion finished"
-        string ingest_report "Parse report with files list and warnings"
+        timestamp created_at "When upload was saved"
+        timestamp stored_at "When storage finalized"
+        map ingest_report "Parse report with warnings"
     }
 
-    post {
-        string post_id PK "NormalizedPost id used as Firestore document id"
-        string upload_id FK "Parent upload this post came from"
-        string user_id FK "Owner denormalized from path userId"
+    object_storage {
+        string object_path PK "users uid raw_uploads uploadId filename"
+        string bucket "GCS or local-fallback"
+        string content_hash "Checksum of stored bytes"
+        int size_bytes "Object size"
+        string storage_backend "gcs or local_fallback"
+    }
+
+    normalized_post {
+        string post_id PK "NormalizedPost id"
+        string upload_id FK "Parent upload"
+        string user_id FK "Owner"
         string platform "instagram linkedin reddit or sample"
-        string content "Caption or post text up to 5000 characters"
-        string created_at "ISO 8601 when content was originally posted"
+        string content "Caption or post text"
+        string created_at "ISO 8601 original timestamp"
+        timestamp created_at_ts "Indexed Firestore timestamp"
         string post_type "post comment share reply or unknown"
-        int engagement "Likes upvotes or reactions if available"
-        string source_context "Extra context such as subreddit name"
-        string url "Permalink to original content if available"
-        string hashtags "JSON array of hashtags from content"
+        int engagement "Likes upvotes or reactions"
+        string source_context "Subreddit or similar"
+        string url "Permalink if available"
+        list hashtags "Hashtags from content"
+        int schema_version "2"
+    }
+
+    legacy_file {
+        string file_id PK "Sanitized export path"
+        string upload_id FK "Parent upload"
+        bool chunked "True when content exceeds field limit"
+        string content "Inline text for small files"
+        int schema_version "Retained until cleanup"
     }
 
     analysis {
-        string analysis_id PK "UUID for one persona or NLP analysis run"
-        string user_id FK "Owner linked to user"
-        int post_count "Number of posts included in analysis"
-        string topics "TF-IDF topic clusters stub empty today"
-        string sentiment_summary "Aggregated VADER scores stub null today"
-        string organism_data "3D coral payload stub today"
-        string created_at "ISO 8601 UTC when analysis was created"
-        string updated_at "ISO 8601 UTC when analysis was last updated"
+        string analysis_id PK "UUID for one NLP run"
+        string user_id FK "Owner"
+        string status "pending ready failed"
+        int schema_version "2"
+        int post_count "Posts included"
+        map sentiment_summary "Aggregated VADER scores"
+        list topics "Top topics with volume"
+        map organism_data "3D coral payload"
+        bool post_insights_chunked "True when insights are split"
+        timestamp created_at "When analysis was created"
+        timestamp updated_at "When analysis was last updated"
     }
 
-    analysis_upload {
-        string analysis_id FK "Analysis that used this upload as input"
-        string upload_id FK "Upload whose posts were read for analysis"
+    post_insights_chunk {
+        string chunk_id PK "Zero-padded index"
+        int index "Chunk order"
+        list items "Compacted per-post insights"
+    }
+
+    privacy_settings {
+        string doc_id PK "privacy"
+        bool include_comments "Share comments"
+        bool exclude_flagged_from_share "Strip red-flag examples"
+        bool include_post_excerpts_in_share "Include content excerpts"
+        int share_expiry_days "Default share TTL days"
+        list excluded_platforms "Platforms omitted from shares"
+    }
+
+    content_hash_claim {
+        string content_hash PK "SHA-256 digest"
+        string upload_id FK "Claimed upload"
+        string user_id FK "Owner"
+        timestamp claimed_at "Transactional claim time"
+    }
+
+    share {
+        string token PK "Random public token"
+        string user_id FK "Owner private"
+        string analysis_id FK "Source analysis"
+        timestamp expires_at "API expiry check"
+        timestamp expire_at "Firestore TTL field"
+        bool revoked "Owner revocation flag"
+        map payload "Immutable privacy-filtered snapshot"
+        int schema_version "2"
+    }
+
+    evolution_snapshot {
+        string analysis_id PK "Linked analysis"
+        timestamp created_at "Snapshot time"
+        list topics "Topics at this run"
+        float compound "Mean sentiment"
+        int post_count "Posts at this run"
     }

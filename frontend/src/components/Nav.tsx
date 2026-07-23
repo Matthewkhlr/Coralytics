@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Link } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { Menu, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -24,15 +24,12 @@ const links = [
 
 function BrandMark({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        "flex size-8 items-center justify-center rounded-full border border-foreground/40 font-display text-[17px] font-semibold text-foreground/95",
-        className,
-      )}
+    <img
+      src="/favicon.ico"
+      alt=""
+      className={cn("size-10 shrink-0", className)}
       aria-hidden
-    >
-      C
-    </span>
+    />
   );
 }
 
@@ -43,12 +40,20 @@ function NavLinks({
   className?: string;
   onNavigate?: () => void;
 }) {
+  const location = useLocation();
+  const runParam = new URLSearchParams(location.search).get("run");
+  const runQuery = runParam ? `?run=${encodeURIComponent(runParam)}` : "";
+
   return (
     <nav className={cn("flex items-center gap-2", className)}>
-      {links.map((l) => (
+      {links.map((l) => {
+        const to =
+          l.to === "/dashboard" || l.to === "/insights" ? `${l.to}${runQuery}` : l.to;
+
+        return (
         <NavLink
           key={l.to}
-          to={l.to}
+          to={to}
           end={"end" in l ? l.end : false}
           onClick={onNavigate}
           className={({ isActive }) =>
@@ -75,7 +80,8 @@ function NavLinks({
             </>
           )}
         </NavLink>
-      ))}
+        );
+      })}
     </nav>
   );
 }

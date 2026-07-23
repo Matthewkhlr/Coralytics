@@ -12,13 +12,16 @@ from pydantic import BaseModel, Field
 from app.auth import require_matching_user, verify_firebase_token
 from app.config import get_settings
 from app.firebase import init_firebase
+from app.models.persistence import UPLOAD_PLATFORM_CHOICES
 from app.services import (
     analysis_service,
     firestore_service,
     ingestion_service,
     privacy_service,
+    reef_settings_service,
     seed_service,
     share_service,
+    username_service,
 )
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
@@ -34,11 +37,9 @@ class Post(BaseModel):
 
 class AnalysisRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
-    # CHANGED: posts/upload_ids are kept for backwards compatibility with
-    # any existing callers, but are no longer used -- /analyze now always
-    # analyzes the user's ENTIRE post history (see analysis_service.py).
-    # Left in place rather than removed so this isn't a breaking schema
-    # change for anyone already calling this endpoint.
+    # posts/upload_ids are kept for backwards compatibility with any existing
+    # callers. upload_ids scope the first analysis to the current upload batch;
+    # later runs analyze the user's full post history (see analysis_service.py).
     posts: list[Post] = Field(default_factory=list)
     upload_ids: list[str] = Field(default_factory=list)
     persist: bool = True
@@ -48,19 +49,43 @@ class AnalysisRequest(BaseModel):
 class PrivacySettingsRequest(BaseModel):
     include_comments: bool | None = None
     exclude_flagged_from_share: bool | None = None
+    include_post_excerpts_in_share: bool | None = None
+    share_expiry_days: int | None = Field(default=None, ge=1, le=365)
+    excluded_platforms: list[str] | None = None
+
+
+class ReefSettingsRequest(BaseModel):
+    show_rock: bool | None = None
+    show_fish: bool | None = None
+    water_color: str | None = Field(default=None, pattern="^#[0-9a-fA-F]{6}$")
+    sand_color: str | None = Field(default=None, pattern="^#[0-9a-fA-F]{6}$")
+    fish_color: str | None = Field(default=None, pattern="^#[0-9a-fA-F]{6}$")
+    rock_color: str | None = Field(default=None, pattern="^#[0-9a-fA-F]{6}$")
 
 
 class UploadPlatformUpdate(BaseModel):
     platform: str = Field(..., min_length=1)
-    include_post_excerpts_in_share: bool | None = None
-    share_expiry_days: int | None = Field(default=None, ge=1, le=365)
-    excluded_platforms: list[str] | None = None
 
 
 class CreateShareRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
     analysis_id: str = Field(..., min_length=1)
     expiry_days: int | None = Field(default=None, ge=1, le=365)
+
+
+class UsernameClaimRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=20)
+    email: str = Field(..., min_length=3)
+
+
+class UsernameChangeRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=20)
+    email: str | None = None
+    old_username: str | None = None
+
+
+class UsernameLookupRequest(BaseModel):
+    identifier: str = Field(..., min_length=1)
 
 
 @asynccontextmanager
@@ -212,6 +237,7 @@ def _ingest_and_save_upload(
             ingest_report=ingest_report,
             raw_files=raw_files,
             content_hash=content_hash,
+            original_bytes=content,
         )
 
         upload["content_hash"] = content_hash
@@ -329,10 +355,14 @@ async def upload_fixture(
 def list_user_uploads(
     user_id: str,
     _: Annotated[str, Depends(require_matching_user)],
+    limit: int | None = Query(default=None, ge=1, le=500),
+    cursor: str | None = Query(default=None),
 ) -> dict[str, list[dict[str, object]]]:
     """List upload metadata for a user."""
     try:
-        uploads = firestore_service.list_uploads(user_id)
+        uploads = firestore_service.list_uploads(
+            user_id, limit=limit, start_after=cursor
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to list uploads: {exc}") from exc
 
@@ -361,7 +391,7 @@ def patch_upload_platform(
 ) -> dict[str, object]:
     """Update the confirmed platform/source for an upload."""
     platform = payload.platform.lower().strip()
-    if platform not in {"instagram", "linkedin", "reddit"}:
+    if platform not in UPLOAD_PLATFORM_CHOICES:
         raise HTTPException(
             status_code=400,
             detail="Platform must be instagram, linkedin, or reddit",
@@ -370,6 +400,19 @@ def patch_upload_platform(
         return firestore_service.update_upload_platform(user_id, upload_id, platform)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/uploads/{user_id}/{upload_id}")
+def delete_user_upload(
+    user_id: str,
+    upload_id: str,
+    _: Annotated[str, Depends(require_matching_user)],
+) -> dict[str, object]:
+    """Recursively delete an upload and associated storage."""
+    try:
+        return firestore_service.delete_upload(user_id, upload_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to delete upload: {exc}") from exc
 
 
 @app.get("/uploads/{user_id}/{upload_id}/posts")
@@ -428,6 +471,7 @@ def analyze_posts(
             payload.user_id,
             persist=payload.persist,
             name=payload.name,
+            upload_ids=payload.upload_ids or None,
         )
     except Exception as exc:
         message = str(exc)
@@ -451,15 +495,31 @@ def analyze_posts(
 def list_user_analyses(
     user_id: str,
     _: Annotated[str, Depends(require_matching_user)],
+    limit: int | None = Query(default=None, ge=1, le=500),
+    cursor: str | None = Query(default=None),
 ) -> dict[str, list[dict[str, object]]]:
     """List analysis results for a user."""
     try:
         # Return document summaries; clients load full post_insights via GET one analysis.
-        analyses = firestore_service.list_analyses(user_id, hydrate=False)
+        analyses = firestore_service.list_analyses(
+            user_id, hydrate=False, limit=limit, start_after=cursor
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to list analyses: {exc}") from exc
 
     return {"analyses": analyses}
+
+
+@app.delete("/analyses/{user_id}/{analysis_id}")
+def delete_user_analysis(
+    user_id: str,
+    analysis_id: str,
+    _: Annotated[str, Depends(require_matching_user)],
+) -> dict[str, object]:
+    try:
+        return firestore_service.delete_analysis(user_id, analysis_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to delete analysis: {exc}") from exc
 
 
 @app.get("/analyses/{user_id}/{analysis_id}")
@@ -495,6 +555,29 @@ def update_privacy_settings(
     return privacy_service.save_privacy_settings(user_id, merged)
 
 
+@app.get("/users/{user_id}/reef-settings")
+def get_reef_settings(
+    user_id: str,
+    _: Annotated[str, Depends(require_matching_user)],
+) -> dict[str, Any]:
+    return reef_settings_service.get_reef_settings(user_id)
+
+
+@app.put("/users/{user_id}/reef-settings")
+def update_reef_settings(
+    user_id: str,
+    payload: ReefSettingsRequest,
+    _: Annotated[str, Depends(require_matching_user)],
+) -> dict[str, Any]:
+    current = reef_settings_service.get_reef_settings(user_id)
+    updates = payload.model_dump(exclude_none=True)
+    merged = {**current, **updates}
+    try:
+        return reef_settings_service.save_reef_settings(user_id, merged)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/shares")
 def create_share_link(
     payload: CreateShareRequest,
@@ -521,4 +604,84 @@ def get_share_link(token: str) -> dict[str, Any]:
         return share_service.get_public_share(token)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/shares/{token}/revoke")
+def revoke_share_link(
+    token: str,
+    current_uid: AuthUser,
+) -> dict[str, Any]:
+    try:
+        return share_service.revoke_share(current_uid, token)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.delete("/shares/{token}")
+def delete_share_link(
+    token: str,
+    current_uid: AuthUser,
+) -> dict[str, Any]:
+    try:
+        return share_service.delete_share(current_uid, token)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.get("/usernames/me")
+def get_my_username(current_uid: AuthUser) -> dict[str, str | None]:
+    """Return the authenticated user's claimed username, if any."""
+    return {"username": username_service.get_owned_username(current_uid)}
+
+
+@app.get("/usernames/available")
+def check_username_available(username: str = Query(..., min_length=3, max_length=20)) -> dict[str, Any]:
+    try:
+        available = username_service.is_available(username)
+    except username_service.UsernameError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"username": username_service.normalize_username(username), "available": available}
+
+
+@app.post("/usernames/resolve-login")
+def resolve_username_login(payload: UsernameLookupRequest) -> dict[str, str]:
+    """Public endpoint used before Firebase Auth sign-in."""
+    try:
+        return username_service.resolve_login_email(payload.identifier)
+    except username_service.UsernameError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/usernames/claim")
+def claim_username(
+    payload: UsernameClaimRequest,
+    current_uid: AuthUser,
+) -> dict[str, Any]:
+    try:
+        return username_service.claim(
+            payload.username, uid=current_uid, email=payload.email
+        )
+    except username_service.UsernameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/usernames/change")
+def change_username(
+    payload: UsernameChangeRequest,
+    current_uid: AuthUser,
+) -> dict[str, Any]:
+    email = (payload.email or "").strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required to change username")
+    try:
+        return username_service.change(
+            uid=current_uid,
+            email=email,
+            new_username=payload.username,
+            old_username=payload.old_username,
+        )
+    except username_service.UsernameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 

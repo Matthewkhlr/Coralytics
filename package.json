@@ -1,12 +1,15 @@
 {
   "private": true,
   "scripts": {
-    "firebase:emulators": "firebase emulators:start --only firestore,auth",
-    "firebase:emulators:all": "firebase emulators:start --only firestore,hosting,auth",
-    "firebase:deploy:rules": "firebase deploy --only firestore:rules",
+    "firebase:emulators": "firebase emulators:start --only firestore,auth,storage",
+    "firebase:emulators:all": "firebase emulators:start --only firestore,hosting,auth,storage",
+    "firebase:deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes",
     "firebase:deploy:hosting": "firebase deploy --only hosting",
-    "seed": "cd backend && python -m app.seed",
-    "seed:cloud": "cd backend && python -m app.seed --cloud"
+    "migrate:dry-run": "cd backend && python3 -m app.migrate --dry-run",
+    "migrate:apply": "cd backend && python3 -m app.migrate --apply",
+    "test:backend": "cd backend && python3 -m unittest discover -s app -p 'test_*.py'",
+    "seed": "cd backend && python3 -m app.seed",
+    "seed:cloud": "cd backend && python3 -m app.seed --cloud"
   },
   "devDependencies": {
     "firebase-tools": "^15.21.0"

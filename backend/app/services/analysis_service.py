@@ -20,6 +20,7 @@ Usage (from the API layer):
 
 from __future__ import annotations
 
+import math
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from statistics import mean
@@ -30,6 +31,7 @@ from app.services import (
     firestore_service,
     red_flag_service,
     sentiment_service,
+    source_summary_service,
     topic_service,
 )
 
@@ -99,32 +101,86 @@ def _sentiment_summary_for_frontend(scored_posts: list[dict[str, Any]]) -> dict[
     }
 
 
+_COMMENT_TYPES = frozenset({"comment", "reply"})
+
+
+def _coerce_engagement(post: dict[str, Any]) -> int | None:
+    raw = post.get("engagement")
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        parsed = int(raw)
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def _build_engagement_norm_map(posts: list[dict[str, Any]]) -> dict[str, float | None]:
+    """Map post id -> log-scaled engagement in [0, 1], or None when unavailable."""
+    by_id: dict[str, int] = {}
+    for post in posts:
+        post_id = post.get("id")
+        engagement = _coerce_engagement(post)
+        if post_id and engagement is not None:
+            by_id[post_id] = engagement
+
+    if not by_id:
+        return {post.get("id"): None for post in posts if post.get("id")}
+
+    max_eng = max(by_id.values())
+    log_max = math.log1p(max_eng) if max_eng > 0 else 0.0
+    norm_map: dict[str, float | None] = {}
+    for post in posts:
+        post_id = post.get("id")
+        if not post_id:
+            continue
+        engagement = _coerce_engagement(post)
+        if engagement is None or log_max <= 0:
+            norm_map[post_id] = None
+        else:
+            norm_map[post_id] = round(math.log1p(engagement) / log_max, 4)
+    return norm_map
+
+
 def _enrich_topics(
     scored: list[dict[str, Any]],
     topic_results: list[dict[str, Any]],
+    posts_by_id: dict[str, dict[str, Any]],
     *,
     top_n: int = 3,
 ) -> list[dict[str, Any]]:
-    """Build topic payloads with postVolume and mean sentiment per topic."""
+    """Build topic payloads with postVolume, sentiment, engagement, and comments."""
     scored_by_id = {row["id"]: row for row in scored}
     topic_compounds: dict[str, list[float]] = defaultdict(list)
+    topic_engagements: dict[str, list[int]] = defaultdict(list)
+    topic_comment_counts: Counter[str] = Counter()
     topic_counts: Counter[str] = Counter()
 
     for result in topic_results:
         post_id = result.get("id")
         compound = scored_by_id.get(post_id, {}).get("compound", 0.0)
+        post = posts_by_id.get(post_id, {})
+        post_type = str(post.get("post_type") or "").lower().strip()
+        engagement = _coerce_engagement(post)
+
         for topic_name in result.get("topics", []):
             topic_counts[topic_name] += 1
             topic_compounds[topic_name].append(compound)
+            if engagement is not None:
+                topic_engagements[topic_name].append(engagement)
+            if post_type in _COMMENT_TYPES:
+                topic_comment_counts[topic_name] += 1
 
     enriched: list[dict[str, Any]] = []
     for name, count in topic_counts.most_common(top_n):
         compounds = topic_compounds[name]
+        engagements = topic_engagements[name]
         enriched.append(
             {
                 "name": name,
                 "postVolume": count,
                 "sentiment": round(mean(compounds), 4) if compounds else 0.0,
+                "avgEngagement": round(mean(engagements), 2) if engagements else None,
+                "commentVolume": topic_comment_counts[name],
             }
         )
     return enriched
@@ -367,16 +423,27 @@ def run_user_analysis(
     *,
     persist: bool = True,
     name: str | None = None,
+    upload_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run analysis over the user's cumulative, deduplicated post history.
 
     Every persisted result is a snapshot of the same canonical reef. Individual
     uploads are never analyzed in isolation.
 
+    On the first run (no prior analyses), when upload_ids are provided, only
+    those uploads are included and any other stored exports are removed.
+
     Set persist=False to preview results without writing to Firestore
     (useful for local testing against the emulator).
     """
-    posts = firestore_service.list_all_user_posts(user_id)
+    prior_list = firestore_service.list_analyses(user_id, hydrate=False)
+    is_first_run = not prior_list
+    scoped_upload_ids = [str(uid) for uid in (upload_ids or []) if uid]
+
+    if is_first_run and scoped_upload_ids:
+        posts = firestore_service.list_user_posts(user_id, upload_ids=scoped_upload_ids)
+    else:
+        posts = firestore_service.list_all_user_posts(user_id)
     if not posts:
         return _empty_result(user_id)
 
@@ -384,7 +451,9 @@ def run_user_analysis(
     topic_results = topic_service.assign_topics(posts)
 
     sentiment_summary = _sentiment_summary_for_frontend(scored)
-    topics = _enrich_topics(scored, topic_results, top_n=3)
+    posts_by_id = {post.get("id"): post for post in posts if post.get("id")}
+    engagement_norm = _build_engagement_norm_map(posts)
+    topics = _enrich_topics(scored, topic_results, posts_by_id, top_n=3)
     account_age_days = _compute_account_age_days(posts)
     date_range = _compute_date_range(posts)
     sentiment_timeline = _build_sentiment_timeline(scored)
@@ -399,7 +468,6 @@ def run_user_analysis(
 
     prior_analysis = None
     # Summaries only — full post_insights hydration is unnecessary for diffs.
-    prior_list = firestore_service.list_analyses(user_id, hydrate=False)
     if prior_list:
         prior_analysis = prior_list[0]
 
@@ -423,6 +491,9 @@ def run_user_analysis(
                 "sentiment_label": sentiment.get("label"),
                 "sentiment_compound": sentiment.get("compound"),
                 "topics": topics_by_id.get(post_id, []),
+                "post_type": post.get("post_type"),
+                "engagement": _coerce_engagement(post),
+                "engagementNorm": engagement_norm.get(post_id),
             }
         )
 
@@ -433,7 +504,18 @@ def run_user_analysis(
     }
 
     resolved_upload_ids = sorted(
-        {str(post["_upload_id"]) for post in posts if post.get("_upload_id")}
+        {
+            uid
+            for post in posts
+            for uid in [source_summary_service.post_upload_id(post)]
+            if uid
+        }
+    )
+    source_summary = source_summary_service.build_source_summary(
+        user_id,
+        posts,
+        resolved_upload_ids,
+        platform_breakdown=platform_breakdown,
     )
 
     trimmed_name = (name or "").strip()
@@ -453,6 +535,7 @@ def run_user_analysis(
         "evolution": evolution,
         "date_range": date_range,
         "diff": diff,
+        "source_summary": source_summary,
     }
 
     if not persist:
@@ -475,6 +558,8 @@ def run_user_analysis(
                 "sentiment_label": sentiment.get("label"),
                 "sentiment_compound": sentiment.get("compound"),
                 "topics": topics_by_id.get(post_id, []),
+                "post_type": post.get("post_type"),
+                "engagement": _coerce_engagement(post),
             }
         )
 
@@ -496,6 +581,9 @@ def run_user_analysis(
             "post_count": len(posts),
         },
     )
+
+    if is_first_run and scoped_upload_ids:
+        analysis_store_service.cleanup_unreferenced_uploads(user_id)
 
     return saved
 

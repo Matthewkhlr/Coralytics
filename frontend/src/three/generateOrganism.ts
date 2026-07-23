@@ -1,1 +1,1 @@
-export { coralV1 as generateOrganism } from "./generators/coralV1";
+export { coralSilhouette as generateOrganism } from "./generators/coralSilhouette";

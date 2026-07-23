@@ -1,51 +1,51 @@
 import type { OrganismPost } from "../organismTypes";
+import {
+  getSentimentColors,
+  SENTIMENT_COLOR_FALLBACK,
+  SENTIMENT_NEUTRAL_RANGE,
+  sentimentFromCompound,
+  type Sentiment,
+} from "@/lib/sentimentColors";
 
-// ========== Sentiment colors ==========
-// Real field names (confirmed from a live sample post):
-//   sentiment_label: "positive" | "negative" | "neutral" (already classified upstream)
-//   sentiment_compound: number, -1 (very negative) to +1 (very positive)
-// We trust sentiment_label when present, and only fall back to thresholding
-// sentiment_compound if the label is missing. SENTIMENT_NEUTRAL_RANGE only
-// matters for that fallback path.
-export type Sentiment = "positive" | "neutral" | "negative";
+export type { Sentiment };
 
 export const SENTIMENT_COLORS: Record<Sentiment, string> = {
-  positive: "#22a55f", // green
-  neutral: "#c9a24b",  // tan / gold
-  negative: "#e0393e", // red
+  ...SENTIMENT_COLOR_FALLBACK,
 };
 
 export const SENTIMENT_LEGEND: { key: Sentiment; label: string; color: string }[] = [
-  { key: "positive", label: "Positive sentiment", color: SENTIMENT_COLORS.positive },
-  { key: "neutral", label: "Neutral", color: SENTIMENT_COLORS.neutral },
-  { key: "negative", label: "Negative / risky", color: SENTIMENT_COLORS.negative },
+  { key: "positive", label: "Positive Sentiment", color: SENTIMENT_COLOR_FALLBACK.positive },
+  { key: "neutral", label: "Neutral", color: SENTIMENT_COLOR_FALLBACK.neutral },
+  { key: "negative", label: "Negative / Risky", color: SENTIMENT_COLOR_FALLBACK.negative },
 ];
 
-// score must exceed this magnitude (in either direction) to count as
-// positive/negative rather than neutral — only used when sentiment_label
-// isn't available and we have to derive it from sentiment_compound
-const SENTIMENT_NEUTRAL_RANGE = 0.15;
+export function getTopicSentiment(compound: number): Sentiment {
+  return sentimentFromCompound(compound);
+}
+
+export function getTopicSentimentColor(compound: number): string {
+  return getSentimentColors()[sentimentFromCompound(compound)];
+}
 
 export function getSentiment(post: OrganismPost): Sentiment {
-  const label = (post as any).sentiment_label;
+  const label = post.sentiment_label;
   if (label === "positive" || label === "negative" || label === "neutral") {
     return label;
   }
 
-  const compound = (post as any).sentiment_compound;
+  const compound = post.sentiment_compound;
   if (typeof compound === "number" && !Number.isNaN(compound)) {
-    if (compound >= SENTIMENT_NEUTRAL_RANGE) return "positive";
-    if (compound <= -SENTIMENT_NEUTRAL_RANGE) return "negative";
-    return "neutral";
+    return sentimentFromCompound(compound);
   }
 
   return "neutral";
 }
 
+export function getPostSentimentColor(post: OrganismPost): string {
+  return getSentimentColors()[getSentiment(post)];
+}
+
 // ========== Category colors ==========
-// Confirmed from a live sample post: there's no separate `category` field,
-// just `topics: string[]` (e.g. ["general"]) — the same array coralV4 uses
-// for branch grouping. So this always falls back to topics[0] in practice.
 export type Category =
   | "travel"
   | "technology"
@@ -87,8 +87,8 @@ export const CATEGORY_LEGEND: { key: Category; label: string; color: string }[] 
 
 export function getCategory(post: OrganismPost): Category {
   const raw = (
-    (post as any).category ??
-    (post as any).topics?.[0] ??
+    (post as { category?: string }).category ??
+    post.topics?.[0] ??
     "general"
   )
     .toString()
@@ -96,3 +96,5 @@ export function getCategory(post: OrganismPost): Category {
 
   return (raw in CATEGORY_COLORS ? raw : "general") as Category;
 }
+
+export { SENTIMENT_NEUTRAL_RANGE };

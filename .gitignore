@@ -60,3 +60,8 @@ backend/*_output/
 ingest_output/
 real_output/
 *_output/
+
+# Local Cloud Storage fallback used when Storage emulator is unset
+backend/.local_object_store/
+backend/app/.local_object_store/
+backend/app/services/.local_object_store/

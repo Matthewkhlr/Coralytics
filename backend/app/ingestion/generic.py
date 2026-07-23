@@ -22,6 +22,24 @@ from .schema import NormalizedPost, Platform, PostType, make_id, safe_build_post
 HASHTAG_RE = re.compile(r"#(\w+)")
 
 
+def _coerce_engagement(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        parsed = int(value)
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def engagement_from_entry(entry: dict[str, Any]) -> int | None:
+    """Read likes/upvotes/reactions from common export field names."""
+    for key in ("engagement", "likes", "like_count", "upvotes", "score"):
+        parsed = _coerce_engagement(entry.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def parse_generic_posts(
     data: list[dict[str, Any]],
     *,
@@ -62,12 +80,19 @@ def parse_generic_posts(
 
         raw_id = entry.get("id") or str(index)
 
+        post_type_raw = str(entry.get("post_type") or "post").lower().strip()
+        try:
+            post_type = PostType(post_type_raw)
+        except ValueError:
+            post_type = PostType.post
+
         post = safe_build_post(
             id=make_id(platform, str(raw_id)),
             platform=platform,
             content=content,
             created_at=to_iso(entry.get("created_at")),
-            post_type=PostType.post,
+            post_type=post_type,
+            engagement=engagement_from_entry(entry),
             hashtags=HASHTAG_RE.findall(content),
         )
         if post is not None:

@@ -41,21 +41,31 @@ The backend is **Python** — there is no `npm run dev` in `backend/`. Use a Pyt
 
 ## Data storage
 
-Uploads follow a two-layer storage model inside one Firestore database:
+Schema version **2** uses a hybrid model:
 
-| Layer | Firestore path | Purpose |
+| Layer | Location | Purpose |
 |---|---|---|
-| **DB1 — raw exports** | `users/{userId}/raw_uploads/{uploadId}/files/{fileId}` | Extracted `.json`/`.csv` export files stored as-is after zip ingestion |
-| **DB1 metadata** | `users/{userId}/raw_uploads/{uploadId}` | Upload filename, platform, ingest report, raw file count |
-| **DB2 — analysis** | `users/{userId}/analyses/{analysisId}` | Sentiment, topics, organism data, and per-post `post_insights` |
+| **DB1 metadata** | `users/{userId}/raw_uploads/{uploadId}` | Upload lifecycle (`pending`/`ready`/`failed`), checksum, ingest report, object pointer |
+| **DB1 normalized posts** | `users/{userId}/raw_uploads/{uploadId}/posts/{postId}` | Queryable posts (`platform`, `post_type`, `created_at`) |
+| **DB1 object storage** | Cloud Storage `users/{uid}/raw_uploads/{uploadId}/…` | Original export bytes (local fallback when Storage emulator is unset) |
+| **DB1 legacy files** | `…/files/{fileId}` (+ optional `chunks`) | Retained for dual-read during migration; removed only by explicit cleanup |
+| **DB2 analysis** | `users/{userId}/analyses/{analysisId}` | Sentiment, topics, organism data, chunked `post_insights` |
+| **Shares** | `shares/{token}` | Privacy-filtered snapshots; `expire_at` TTL + API expiry/revoke |
+| **Usernames** | `usernames/{username}` | Backend-owned unique handles (no public Firestore reads) |
 
-Pipeline: upload → extract zip → save raw files to **DB1** → NLP reads DB1 → results saved to **DB2** → dashboard coral reads **DB2**.
-
-The original zip is not stored; only extracted parseable export files are persisted in DB1.
+Pipeline: upload → extract → store object + normalized posts (+ legacy files) → NLP → DB2 → dashboard.
 
 Schema diagram: [`test/coralytics_data_model.mmd`](test/coralytics_data_model.mmd)
 
-The FastAPI backend writes via the **Firebase Admin SDK** and bypasses client security rules. Rules apply when the frontend talks to Firestore directly with Auth.
+Migrate existing v1 uploads (dry-run first):
+
+```bash
+cd backend
+python -m app.migrate --dry-run
+python -m app.migrate --apply --batch-size 25
+```
+
+The FastAPI backend writes via the **Firebase Admin SDK** and bypasses client security rules. Direct client writes to uploads/analyses/shares/usernames are denied.
 
 ## Prerequisites
 
@@ -191,7 +201,25 @@ The frontend calls the FastAPI backend with Firebase ID tokens (`Authorization: 
 | Share link | `POST /shares` |
 | Recruiter view | `GET /shares/{token}` (public) |
 
-Sign up via `/login` (Auth emulator on `localhost:9099` in local dev). All protected routes use your Firebase `uid`.
+Sign up via `/login` (Auth emulator on `localhost:9099` in local dev). `/upload`, `/dashboard`, and `/insights` require login and redirect to `/login` when signed out.
+
+### Authentication (email, username, Google)
+
+| Method | How |
+|---|---|
+| Email + password | Sign up / login on `/login` |
+| Username login | Enter username on login form (resolved to email via API) |
+| Google | **Continue with Google** on `/login` (sign-up tab requires a username first) |
+
+**Local Google sign-in:** set `VITE_USE_AUTH_EMULATOR=true` in `.env` and run `npm run firebase:emulators` (includes Auth on `localhost:9099`).
+
+**Cloud Google sign-in:**
+
+1. [Firebase Console](https://console.firebase.google.com/project/coralytics-c8767/authentication/providers) → **Authentication** → **Sign-in method** → enable **Google**
+2. **Authentication** → **Settings** → **Authorized domains** → add `localhost` and your production domain (e.g. `coralytics-c8767.web.app`)
+3. Ensure frontend env vars match the same Firebase project (`VITE_FIREBASE_PROJECT_ID`)
+
+New Google users who sign in without a username are prompted to **pick a username** before entering the app. Local emulator accounts and cloud accounts are separate — sign up in each environment independently.
 
 ### Scripts
 
@@ -209,22 +237,31 @@ npm run preview   # preview production build
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | Health check; reports `use_emulators` and project ID |
-| `POST` | `/seed/sample-data` | Ingest all bundled sample exports + stub analysis |
-| `POST` | `/uploads` | Ingest a `.zip`/`.json`/`.csv` export and save normalized posts |
+| `POST` | `/seed/sample-data` | Ingest all bundled sample exports + analysis |
+| `POST` | `/uploads` | Ingest a `.zip`/`.json`/`.csv` export (v2 hybrid storage) |
 | `POST` | `/uploads/fixture` | Ingest one sample file from disk (**emulator only**) |
-| `GET` | `/uploads/{user_id}` | List upload metadata for a user |
+| `GET` | `/uploads/{user_id}` | List upload metadata (`limit`, `cursor`) |
 | `GET` | `/uploads/{user_id}/{upload_id}` | Get a single upload record |
-| `GET` | `/uploads/{user_id}/{upload_id}/posts` | List parsed posts (paginated: `limit`, `cursor`) |
-| `POST` | `/analyze` | Run analysis and optionally persist to Firestore |
-| `GET` | `/analyses/{user_id}` | List analyses for a user |
+| `DELETE` | `/uploads/{user_id}/{upload_id}` | Recursively delete upload + storage |
+| `GET` | `/uploads/{user_id}/{upload_id}/posts` | List posts (paginated: `limit`, `cursor`) |
+| `POST` | `/analyze` | Run cumulative analysis and optionally persist |
+| `GET` | `/analyses/{user_id}` | List analyses (`limit`, `cursor`; summaries only) |
 | `GET` | `/analyses/{user_id}/{analysis_id}` | Get a single analysis |
+| `DELETE` | `/analyses/{user_id}/{analysis_id}` | Delete analysis + insight chunks |
 | `GET` | `/uploads/{user_id}/posts/by-topic` | List posts tagged with a topic |
 | `GET` | `/users/{user_id}/privacy-settings` | Get privacy settings |
 | `PUT` | `/users/{user_id}/privacy-settings` | Update privacy settings |
 | `POST` | `/shares` | Create recruiter share link (auth required) |
 | `GET` | `/shares/{token}` | Public read-only share payload |
+| `POST` | `/shares/{token}/revoke` | Owner revoke share |
+| `DELETE` | `/shares/{token}` | Owner delete share |
+| `GET` | `/usernames/available` | Check username availability |
+| `GET` | `/usernames/me` | Get authenticated user's claimed username |
+| `POST` | `/usernames/resolve-login` | Resolve username → email for Auth login |
+| `POST` | `/usernames/claim` | Claim username (auth required) |
+| `POST` | `/usernames/change` | Rename username atomically (auth required) |
 
-`POST /analyze` accepts either `posts` in the request body or `upload_ids` to load parsed posts from Firestore. All endpoints except `/health` and `GET /shares/{token}` require a Firebase ID token.
+`POST /analyze` always analyzes the user's full post history. Public endpoints: `/health`, `GET /shares/{token}`, `GET /usernames/available`, `POST /usernames/resolve-login`. All other endpoints require a Firebase ID token.
 
 ### Ingestion
 
@@ -270,7 +307,11 @@ Copy `.env.example` → `.env` at the **repo root**.
 | Variable | Required | Description |
 |---|---|---|
 | `FIREBASE_PROJECT_ID` | Yes | Firebase project ID (`coralytics-c8767`) |
+| `EXPECTED_FIREBASE_PROJECT_ID` | Optional | Defaults to `coralytics-c8767`; startup fails on mismatch |
+| `ALLOW_FIREBASE_PROJECT_MISMATCH` | Optional | Set `1` to bypass project alignment check |
+| `FIREBASE_STORAGE_BUCKET` | Optional | Defaults to `{projectId}.appspot.com` |
 | `FIRESTORE_EMULATOR_HOST` | Local only | e.g. `localhost:8080` — routes writes to the emulator |
+| `FIREBASE_STORAGE_EMULATOR_HOST` | Local only | e.g. `localhost:9199` for Storage emulator |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Cloud only | Path to service account JSON; **relative paths resolve from repo root** |
 | `CORS_ORIGINS` | Optional | Comma-separated allowed origins (default: `http://localhost:5173`) |
 | `VITE_API_URL` | Frontend | API base URL; use `/api` with Vite dev proxy (default) |
@@ -278,10 +319,11 @@ Copy `.env.example` → `.env` at the **repo root**.
 | `VITE_FIREBASE_AUTH_DOMAIN` | Frontend | Auth domain (`localhost` for emulator) |
 | `VITE_FIREBASE_PROJECT_ID` | Frontend | Must match `FIREBASE_PROJECT_ID` |
 | `VITE_USE_AUTH_EMULATOR` | Frontend | `true` to connect Auth SDK to `localhost:9099` |
+| `VITE_USE_FIRESTORE_EMULATOR` | Frontend | `true` to connect Firestore SDK to `localhost:8080` |
 | `FIREBASE_AUTH_EMULATOR_HOST` | Backend | e.g. `localhost:9099` for token verification against emulator |
 | `AUTH_DISABLED` | Backend | Set to `1` to skip token checks (local scripting only) |
 | `SEED_ENDPOINT_ENABLED` | Optional | Set to `1` to allow `POST /seed/sample-data` against cloud |
-| `MAX_UPLOAD_SIZE_BYTES` | Optional | Max upload size in bytes (default: 25 MB) |
+| `MAX_UPLOAD_SIZE_BYTES` | Optional | Max upload size in bytes (default: 100 MB) |
 
 **Never commit** `service-account.json` or `.env` — both are gitignored.
 

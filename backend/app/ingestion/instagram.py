@@ -128,6 +128,45 @@ def _extract_timestamp(entry: dict[str, Any]) -> Any:
     return None
 
 
+def _coerce_engagement(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        parsed = int(value)
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def _extract_engagement(entry: dict[str, Any]) -> int | None:
+    """Best-effort likes/reactions from Instagram export shapes (when present)."""
+    for key in ("engagement", "likes", "like_count"):
+        parsed = _coerce_engagement(entry.get(key))
+        if parsed is not None:
+            return parsed
+
+    media = entry.get("media")
+    if isinstance(media, list):
+        for item in media:
+            if not isinstance(item, dict):
+                continue
+            for key in ("likes", "like_count", "engagement"):
+                parsed = _coerce_engagement(item.get(key))
+                if parsed is not None:
+                    return parsed
+
+    for item in _walk_label_values(entry.get("label_values")):
+        label = str(item.get("label") or "").lower()
+        if "like" in label or label == "engagement":
+            for key in ("value", "timestamp_value"):
+                if key not in item:
+                    continue
+                parsed = _coerce_engagement(item.get(key))
+                if parsed is not None:
+                    return parsed
+
+    return None
+
+
 def _find_entries(data: Any) -> list[dict[str, Any]]:
     """Instagram export JSON is either a list of entries directly, or a
     dict whose first list-valued key holds the entries.
@@ -182,6 +221,7 @@ def parse_instagram_export(data: Any, id_prefix: str = "post") -> list[Normalize
             content=caption,
             created_at=to_iso(timestamp),
             post_type=PostType.post,
+            engagement=_extract_engagement(entry),
             hashtags=HASHTAG_RE.findall(caption),
         )
         if post is not None:
