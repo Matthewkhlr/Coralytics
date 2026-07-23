@@ -75,10 +75,12 @@ export function OceanPageFrame({
   children,
   animated = false,
   scenic = false,
+  wide = false,
 }: {
   children: ReactNode;
   animated?: boolean;
   scenic?: boolean;
+  wide?: boolean;
 }) {
   const { theme } = useTheme();
   return (
@@ -87,7 +89,7 @@ export function OceanPageFrame({
         aria-hidden
         className="pointer-events-none absolute inset-0 z-0 bg-[#78a4bb] dark:bg-[#00264d]"
       >
-        <LandingReef appearance={theme} ambient scenic={scenic} frozen={!animated} />
+        <LandingReef appearance={theme} ambient scenic={scenic} wide={wide} frozen={!animated} />
         <div className="absolute inset-0 bg-[#78a4bb]/45 dark:bg-[#00264d]/55" />
       </div>
       <PageShell className="relative z-10 pb-10">{children}</PageShell>
