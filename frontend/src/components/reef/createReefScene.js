@@ -183,7 +183,7 @@ function buildParams(isDark, lowPower) {
 
 export async function createReefScene(
   host,
-  { isDark = true, ambient = false, scenic = false, frozen = false } = {},
+  { isDark = true, ambient = false, scenic = false, wide = false, frozen = false } = {},
 ) {
   const lowPower =
     window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
@@ -253,15 +253,27 @@ export async function createReefScene(
   // Default view: wide hero framing — brain coral lower-left, purple tube
   // coral upper-right, with the clownfish swim path centered in frame.
   camera.position.set(0.35, 1.6, 7.1);
+  if (scenic) {
+    camera.position.set(0.15, 1.85, 9.2);
+  }
+  if (wide) {
+    camera.position.set(0.05, 2.05, 12.4);
+  }
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.06;
   // Target at the fish's swim height (y ≈ 0.9) keeps it centered
   controls.target.set(-0.1, 0.9, 0);
+  if (scenic) {
+    controls.target.set(-0.15, 0.75, -0.25);
+  }
+  if (wide) {
+    controls.target.set(-0.15, 0.65, -0.35);
+  }
   controls.minDistance = 5.5;
   // Keep zoom-out short of the fog wall so colours stay saturated
-  controls.maxDistance = 10;
+  controls.maxDistance = wide ? 13 : 10;
   controls.maxPolarAngle = Math.PI * 0.48;
   controls.enablePan = false;
   controls.update();
@@ -679,68 +691,124 @@ export async function createReefScene(
 
     const bodyMat = new THREE.MeshStandardNodeMaterial({
       color: new THREE.Color(color),
-      roughness: 0.72,
+      roughness: 0.66,
       metalness: 0,
     });
     const bellyMat = new THREE.MeshStandardNodeMaterial({
-      color: new THREE.Color("#8fb2c0"),
-      roughness: 0.82,
+      color: new THREE.Color("#9ebecd"),
+      roughness: 0.78,
+      metalness: 0,
+    });
+    const detailMat = new THREE.MeshStandardNodeMaterial({
+      color: new THREE.Color("#142f3d"),
+      roughness: 0.55,
       metalness: 0,
     });
 
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.8, 32, 18), bodyMat);
-    body.scale.set(1.75, 0.48, 0.52);
+    // Baleen-whale side profile (radius, length) — lathed then aligned nose-forward on +X.
+    const bodyProfile = [
+      new THREE.Vector2(0.0, 0.0),
+      new THREE.Vector2(0.05, 0.16),
+      new THREE.Vector2(0.12, 0.38),
+      new THREE.Vector2(0.22, 0.72),
+      new THREE.Vector2(0.32, 1.12),
+      new THREE.Vector2(0.38, 1.55),
+      new THREE.Vector2(0.4, 1.95),
+      new THREE.Vector2(0.37, 2.28),
+      new THREE.Vector2(0.32, 2.52),
+      new THREE.Vector2(0.24, 2.72),
+      new THREE.Vector2(0.14, 2.86),
+      new THREE.Vector2(0.0, 2.92),
+    ];
+    const bodyLength = bodyProfile[bodyProfile.length - 1].y;
+    const bodyCenter = bodyLength / 2;
+
+    const bodyGeo = new THREE.LatheGeometry(bodyProfile, 36);
+    bodyGeo.rotateZ(-Math.PI / 2);
+    bodyGeo.translate(-bodyCenter, 0, 0);
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.castShadow = true;
     body.receiveShadow = true;
     whale.add(body);
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.64, 24, 14), bodyMat);
-    head.position.set(1.08, 0.02, 0);
-    head.scale.set(0.9, 0.68, 0.74);
-    head.castShadow = true;
-    whale.add(head);
-
-    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.62, 24, 12), bellyMat);
-    belly.position.set(0.28, -0.18, 0);
-    belly.scale.set(1.35, 0.18, 0.5);
+    const bellyGeo = new THREE.LatheGeometry(
+      bodyProfile.map((p) => new THREE.Vector2(p.x * 0.9, p.y)),
+      36,
+      Math.PI,
+      Math.PI,
+    );
+    bellyGeo.rotateZ(-Math.PI / 2);
+    bellyGeo.translate(-bodyCenter, 0, 0);
+    const belly = new THREE.Mesh(bellyGeo, bellyMat);
+    belly.position.y = -0.03;
     whale.add(belly);
 
-    const tailStem = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.38, 1.05, 16), bodyMat);
-    tailStem.position.set(-1.2, 0, 0);
-    tailStem.rotation.z = Math.PI / 2;
-    tailStem.scale.set(0.72, 1, 0.72);
-    tailStem.castShadow = true;
-    whale.add(tailStem);
+    // Horizontal tail fluke with a center notch — the most recognizable whale silhouette cue.
+    const flukeShape = new THREE.Shape();
+    flukeShape.moveTo(0, 0);
+    flukeShape.bezierCurveTo(0.18, 0.42, 0.62, 0.58, 1.08, 0.34);
+    flukeShape.bezierCurveTo(0.62, 0.1, 0.18, 0.04, 0, 0);
+    flukeShape.bezierCurveTo(-0.18, 0.04, -0.62, 0.1, -1.08, 0.34);
+    flukeShape.bezierCurveTo(-0.62, 0.58, -0.18, 0.42, 0, 0);
+    const flukeGeo = new THREE.ExtrudeGeometry(flukeShape, {
+      depth: 0.07,
+      bevelEnabled: true,
+      bevelThickness: 0.015,
+      bevelSize: 0.015,
+      bevelSegments: 1,
+    });
+    flukeGeo.center();
+    flukeGeo.rotateY(Math.PI / 2);
+    const fluke = new THREE.Mesh(flukeGeo, bodyMat);
+    fluke.position.set(-bodyCenter - 0.02, 0, 0);
+    fluke.castShadow = true;
+    whale.add(fluke);
 
-    const flukeGeo = new THREE.ConeGeometry(0.34, 0.85, 3);
-    const flukeLeft = new THREE.Mesh(flukeGeo, bodyMat);
-    flukeLeft.position.set(-1.82, 0.08, 0.26);
-    flukeLeft.rotation.set(Math.PI / 2, 0, -0.75);
-    flukeLeft.scale.set(1, 0.42, 0.52);
-    whale.add(flukeLeft);
+    const addPectoralFin = (side) => {
+      const finShape = new THREE.Shape();
+      finShape.moveTo(0, 0);
+      finShape.quadraticCurveTo(0.12, -0.42, 0.2, -0.92);
+      finShape.quadraticCurveTo(0.06, -0.98, 0, -0.78);
+      finShape.quadraticCurveTo(-0.04, -0.42, 0, 0);
+      const finGeo = new THREE.ExtrudeGeometry(finShape, {
+        depth: 0.05,
+        bevelEnabled: true,
+        bevelThickness: 0.01,
+        bevelSize: 0.01,
+        bevelSegments: 1,
+      });
+      finGeo.center();
+      const fin = new THREE.Mesh(finGeo, bodyMat);
+      fin.position.set(0.55, -0.08, side * 0.42);
+      fin.rotation.set(0.08, side * 0.22, side * -0.35);
+      fin.castShadow = true;
+      whale.add(fin);
+    };
+    addPectoralFin(1);
+    addPectoralFin(-1);
 
-    const flukeRight = flukeLeft.clone();
-    flukeRight.position.z = -0.26;
-    flukeRight.rotation.z = 0.75;
-    whale.add(flukeRight);
-
-    const finGeo = new THREE.ConeGeometry(0.24, 0.85, 3);
-    const finLeft = new THREE.Mesh(finGeo, bodyMat);
-    finLeft.position.set(0.18, -0.1, 0.55);
-    finLeft.rotation.set(1.15, 0.1, -0.85);
-    finLeft.scale.set(0.9, 0.32, 0.7);
-    whale.add(finLeft);
-
-    const finRight = finLeft.clone();
-    finRight.position.z = -0.55;
-    finRight.rotation.z = 0.85;
-    whale.add(finRight);
-
-    const dorsal = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.55, 3), bodyMat);
-    dorsal.position.set(-0.18, 0.42, 0);
-    dorsal.rotation.set(0, 0, Math.PI);
-    dorsal.scale.set(0.65, 0.7, 0.55);
+    const dorsalShape = new THREE.Shape();
+    dorsalShape.moveTo(0, 0);
+    dorsalShape.quadraticCurveTo(0.06, 0.18, 0.04, 0.34);
+    dorsalShape.quadraticCurveTo(0.01, 0.22, 0, 0);
+    const dorsalGeo = new THREE.ExtrudeGeometry(dorsalShape, {
+      depth: 0.05,
+      bevelEnabled: false,
+    });
+    dorsalGeo.center();
+    const dorsal = new THREE.Mesh(dorsalGeo, bodyMat);
+    dorsal.position.set(-0.42, 0.36, 0);
+    dorsal.rotation.y = Math.PI / 2;
+    dorsal.castShadow = true;
     whale.add(dorsal);
+
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), detailMat);
+    eye.position.set(1.05, 0.1, 0.24);
+    whale.add(eye);
+
+    const eyeRight = eye.clone();
+    eyeRight.position.z = -0.24;
+    whale.add(eyeRight);
 
     return whale;
   };
@@ -757,8 +825,6 @@ export async function createReefScene(
       whales.push({ mesh, ...def });
     });
   };
-
-  if (scenic) createWhales();
 
   /* ---- corals ---- */
   const coralsGroup = new THREE.Group();
@@ -928,17 +994,6 @@ export async function createReefScene(
     if (pathFollow) {
       fishPathOffset = (fishPathOffset + dt * params.fishPathSpeed + 1) % 1;
       pathFollow.pathOffset.value = fishPathOffset;
-    }
-
-    for (const whale of whales) {
-      whale.phase = (whale.phase + dt * whale.speed) % 1;
-      const a = whale.phase * Math.PI * 2;
-      const x = Math.cos(a) * whale.radiusX;
-      const z = whale.z + Math.sin(a) * whale.radiusZ;
-      const y = whale.y + Math.sin(a * 2 + whale.scale) * 0.16;
-      whale.mesh.position.set(x, y, z);
-      whale.mesh.rotation.y = -a + Math.PI / 2;
-      whale.mesh.rotation.z = Math.sin(a * 2.4) * 0.035;
     }
 
     if (grass) {
