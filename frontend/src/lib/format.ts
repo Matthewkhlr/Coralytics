@@ -9,6 +9,18 @@ export function formatShortDate(iso: string | undefined) {
   });
 }
 
+export function formatDateRange(
+  dateRange?: { earliest?: string | null; latest?: string | null } | null,
+): string {
+  const earliest = formatShortDate(dateRange?.earliest ?? undefined);
+  const latest = formatShortDate(dateRange?.latest ?? undefined);
+  if (earliest === "-" && latest === "-") return "—";
+  if (earliest !== "-" && latest !== "-" && earliest !== latest) {
+    return `${earliest} – ${latest}`;
+  }
+  return earliest !== "-" ? earliest : latest;
+}
+
 export function formatPlatform(platform: string) {
   if (!platform || platform === "mixed") return "Mixed";
   if (platform === "sample") return "Pasted data";
@@ -33,7 +45,7 @@ export function formatActivityType(postType?: string | null): string {
 
 /** Legend line for coral dots under the reef viewport. */
 export const CORAL_DOT_LEGEND =
-  "Beads = posts (click to open)";
+  "Beads = Data (click to open)";
 
 /** Display label for an analysis run - custom name or datetime fallback. */
 export function formatRunLabel(

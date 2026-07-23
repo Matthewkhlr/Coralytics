@@ -1,30 +1,64 @@
-import { CircleDot, GitBranch, Layers, Sprout } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { CORAL_DOT_LEGEND } from "@/lib/format";
-import { REEF_INSTRUCTION_BOX } from "@/lib/buttonStyles";
 import { cn } from "@/lib/utils";
 
-const MEANING_ROWS: { key: string; label: string; Icon: LucideIcon }[] = [
-  { key: "stem", label: "Stem = account history", Icon: Sprout },
-  { key: "branch", label: "Branch = topic", Icon: GitBranch },
-  { key: "thickness", label: "Thickness = volume", Icon: Layers },
-  { key: "beads", label: CORAL_DOT_LEGEND, Icon: CircleDot },
+const MEANING_ROWS: { key: string; label: string }[] = [
+  { key: "stem", label: "Stem = Account history" },
+  { key: "branch", label: "Branch = Topic" },
+  { key: "thickness", label: "Thickness = Volume" },
+  { key: "beads", label: "Beads = Data (click to open)" },
 ];
+
+const SENTIMENT_LEGEND: Array<{
+  key: string;
+  label: string;
+  sentiment: "positive" | "neutral" | "negative";
+}> = [
+  { key: "positive", label: "Positive Sentiment", sentiment: "positive" },
+  { key: "neutral", label: "Neutral", sentiment: "neutral" },
+  { key: "negative", label: "Negative / Risky", sentiment: "negative" },
+];
+
+function SentimentLegendItem({
+  sentiment,
+  label,
+}: {
+  sentiment: "positive" | "neutral" | "negative";
+  label: string;
+}) {
+  const colorClass =
+    sentiment === "positive"
+      ? "text-sentiment-positive"
+      : sentiment === "neutral"
+        ? "text-sentiment-neutral"
+        : "text-sentiment-negative";
+  const swatchClass =
+    sentiment === "positive"
+      ? "bg-sentiment-positive"
+      : sentiment === "neutral"
+        ? "bg-sentiment-neutral"
+        : "bg-sentiment-negative";
+
+  return (
+    <li className={cn("reef-sentiment-legend__item", colorClass)}>
+      <span className={cn("reef-sentiment-legend__swatch", swatchClass)} aria-hidden />
+      {label}
+    </li>
+  );
+}
 
 export function ReefInstructionPanel({ className }: { className?: string }) {
   return (
-    <div className={cn(REEF_INSTRUCTION_BOX, "reef-instruction-panel", className)}>
-      <p className="exhibit-field-label reef-instruction-panel__heading">Instructions</p>
-      <p className="reef-instruction-panel__tips">
-        Click a coloured bead to view a data. Drag the coral to rotate.
-      </p>
-
+    <div className={cn("reef-legend-stack", className)} role="note" aria-label="Reef legend">
       <ul className="reef-meaning-table__rows">
         {MEANING_ROWS.map((row) => (
           <li key={row.key} className="reef-meaning-table__row">
-            <row.Icon className="size-4 shrink-0 text-foreground/70" strokeWidth={1.75} aria-hidden />
-            <span>{row.label}</span>
+            {row.label}
           </li>
+        ))}
+      </ul>
+
+      <ul className="reef-sentiment-legend">
+        {SENTIMENT_LEGEND.map((row) => (
+          <SentimentLegendItem key={row.key} sentiment={row.sentiment} label={row.label} />
         ))}
       </ul>
     </div>

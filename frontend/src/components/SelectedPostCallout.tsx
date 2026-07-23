@@ -7,8 +7,7 @@ import {
   X,
 } from "lucide-react";
 import type { PostInsight, RedFlag } from "@/api/types";
-import { Button } from "@/components/ui/button";
-import { LANDING_BUTTON_SM } from "@/lib/buttonStyles";
+import { ReefCalloutSourceRow } from "@/components/ReefSourceIcon";
 import { formatPlatform, formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -53,91 +52,71 @@ function riskDisplay(flags: RedFlag[], compound?: number): { label: string; clas
   return { label: "Low", className: "text-foreground/80" };
 }
 
-function formatPostId(id?: string): string {
-  if (!id) return "Unknown";
-  const short = id.length > 12 ? `${id.slice(0, 8)}…` : id;
-  return `#${short.toUpperCase()}`;
+function capitalizeTopicLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function formatTopics(topics: string[] | undefined): string {
+  const labels = (topics ?? []).filter(Boolean).map(capitalizeTopicLabel);
+  return labels.length ? labels.join(", ") : "—";
 }
 
 export const SelectedPostCallout = forwardRef<HTMLDivElement, SelectedPostCalloutProps>(
   function SelectedPostCallout({ post, flags, onClose, className }, ref) {
-  const sentiment = sentimentDisplay(post);
-  const risk = riskDisplay(flags, post.sentiment_compound);
-  const topics = (post.topics ?? []).filter(Boolean).join(", ") || "—";
+    const sentiment = sentimentDisplay(post);
+    const risk = riskDisplay(flags, post.sentiment_compound);
+    const topics = formatTopics(post.topics);
 
-  return (
-    <div
-      ref={ref}
-      className={cn("reef-post-callout reef-post-callout--sidebar", className)}
-      role="region"
-      aria-labelledby="reef-post-callout-title"
-    >
-      <div className="reef-post-callout__header">
-        <p id="reef-post-callout-title" className="reef-post-callout__eyebrow">
-          Selected post data
-        </p>
-        <button
-          type="button"
-          className="reef-post-callout__close"
-          onClick={onClose}
-          aria-label="Close"
-        >
-          <X className="size-4" strokeWidth={1.75} />
-        </button>
-      </div>
+    return (
+      <div
+        ref={ref}
+        className={cn("reef-post-callout reef-post-callout--sidebar", className)}
+        role="region"
+        aria-label="Selected post details"
+      >
+        <div className="reef-post-callout__header reef-post-callout__header--close-only">
+          <button
+            type="button"
+            className="reef-post-callout__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X className="size-4" strokeWidth={1.75} />
+          </button>
+        </div>
 
-      <div className="reef-post-callout__source">
-        <span className="reef-post-callout__platform-mark" aria-hidden>
-          {formatPlatform(post.platform ?? "unknown").charAt(0)}
-        </span>
-        <span>
-          Source:{" "}
-          <span className="font-medium text-foreground">
-            {formatPlatform(post.platform ?? "unknown").toUpperCase()}
-          </span>
-        </span>
-      </div>
-
-      <p className="reef-post-callout__post-id">{formatPostId(post.id)}</p>
-
-      <dl className="reef-post-callout__fields">
-        <CalloutField icon={Calendar} label="Date" value={formatShortDate(post.created_at)} />
-        <CalloutField
-          icon={MessageSquare}
-          label="Sentiment"
-          value={sentiment.label}
-          valueClassName={sentiment.className}
+        <ReefCalloutSourceRow
+          label="Source:"
+          value={formatPlatform(post.platform ?? "unknown").toUpperCase()}
+          icon={{ kind: "platform", platform: post.platform }}
         />
-        <CalloutField icon={Tag} label="Topic" value={topics} />
-        <CalloutField
-          icon={AlertTriangle}
-          label="Risk"
-          value={risk.label}
-          valueClassName={risk.className}
-        />
-      </dl>
 
-      <div className="reef-post-callout__text-block">
-        <p className="reef-post-callout__field-label">Post text</p>
-        <p className="reef-post-callout__text">{post.content || "—"}</p>
-      </div>
+        <dl className="reef-post-callout__fields">
+          <CalloutField icon={Calendar} label="Date" value={formatShortDate(post.created_at)} />
+          <CalloutField
+            icon={MessageSquare}
+            label="Sentiment"
+            value={sentiment.label}
+            valueClassName={sentiment.className}
+          />
+          <CalloutField icon={Tag} label="Topic" value={topics} />
+          <CalloutField
+            icon={AlertTriangle}
+            label="Risk"
+            value={risk.label}
+            valueClassName={risk.className}
+          />
+        </dl>
 
-      <div className="reef-post-callout__actions">
-        <Button type="button" variant="outline" className={cn(LANDING_BUTTON_SM, "w-full")} disabled>
-          View original post
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className={cn(LANDING_BUTTON_SM, "w-full")}
-          onClick={onClose}
-        >
-          Close
-        </Button>
+        <div className="reef-post-callout__text-block">
+          <p className="reef-post-callout__field-label">Content</p>
+          <p className="reef-post-callout__text">{post.content || "—"}</p>
+        </div>
       </div>
-    </div>
-  );
-},
+    );
+  },
 );
 
 function CalloutField({
