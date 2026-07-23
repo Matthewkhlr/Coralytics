@@ -3,8 +3,6 @@ import type {
   AnalysesResponse,
   AnalyzeRequest,
   Analysis,
-  CreateShareRequest,
-  PostSummary,
   ReefThemeSettingsApi,
   ShareRecord,
   UploadResponse,
@@ -153,43 +151,8 @@ export function analyzeUploads(request: AnalyzeRequest) {
   });
 }
 
-export function listPostsByTopic(
-  userId: string,
-  topic: string,
-  limit = 20,
-  platform?: string,
-) {
-  const params = new URLSearchParams({ topic, limit: String(limit) });
-  if (platform) params.set("platform", platform);
-  return apiFetch<{ posts: PostSummary[] }>(
-    `/uploads/${encodeURIComponent(userId)}/posts/by-topic?${params}`,
-  );
-}
-
-export function createShare(request: CreateShareRequest) {
-  return apiFetch<ShareRecord>("/shares", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-}
-
 export function getShare(token: string) {
   return apiFetch<ShareRecord>(`/shares/${encodeURIComponent(token)}`);
-}
-
-export function revokeShare(token: string) {
-  return apiFetch<{ token: string; revoked: boolean }>(
-    `/shares/${encodeURIComponent(token)}/revoke`,
-    { method: "POST" },
-  );
-}
-
-export function deleteUpload(userId: string, uploadId: string) {
-  return apiFetch<{ deleted: boolean; upload_id: string }>(
-    `/uploads/${encodeURIComponent(userId)}/${encodeURIComponent(uploadId)}`,
-    { method: "DELETE" },
-  );
 }
 
 export function getReefSettings(userId: string) {

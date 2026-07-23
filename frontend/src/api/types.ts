@@ -192,12 +192,6 @@ export type ShareRecord = {
   payload: Analysis;
 };
 
-export type CreateShareRequest = {
-  user_id: string;
-  analysis_id: string;
-  expiry_days?: number;
-};
-
 export type ReefThemeSettingsApi = {
   show_rock: boolean;
   show_fish: boolean;

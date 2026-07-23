@@ -78,10 +78,6 @@ export async function claimUsername(username: string, _uid: string, email: strin
   });
 }
 
-export async function releaseUsername(_username: string, _uid: string) {
-  // Releases happen atomically through /usernames/change on the backend.
-}
-
 /** Claim a new username and release the previous one when it changes. */
 export async function changeUsernameClaim(
   oldUsername: string | null | undefined,

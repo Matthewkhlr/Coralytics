@@ -59,10 +59,6 @@ export function getSentimentColors(): Record<Sentiment, string> {
   return cachedColors;
 }
 
-export function resetSentimentColorCache(): void {
-  cachedColors = null;
-}
-
 export const SENTIMENT_NEUTRAL_RANGE = 0.15;
 
 export function sentimentFromCompound(compound: number): Sentiment {
