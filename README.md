@@ -1,6 +1,6 @@
 # Coralytics
 
-Coralytics is a React + Three.js web app with a Python/FastAPI analysis backend. Social export files are extracted, stored as raw data in **DB1**, analyzed by NLP into **DB2**, and visualized as a personalized 3D coral.
+Coralytics is a React + Three.js web app with a Python/FastAPI analysis backend. Social export files are extracted, stored as raw data in **DB1**, analyzed by NLP into **DB2**, and visualized as a personalized 3D reef.
 
 **Firebase project:** `coralytics-c8767` (see `.firebaserc`)
 
@@ -8,9 +8,9 @@ Coralytics is a React + Three.js web app with a Python/FastAPI analysis backend.
 
 ```
 ┌─────────────────┐     /api proxy      ┌──────────────────┐     Admin SDK    ┌──────────────────────────────┐
-│  frontend/      │ ──────────────────► │  backend/        │ ─────────────► │  Firestore                   │
+│  frontend/      │ ──────────────────► │  backend/        │ ─────────────► │  Firestore + Cloud Storage   │
 │  React + Vite   │   localhost:8000    │  FastAPI         │                │  DB1: raw_uploads/           │
-│  Three.js coral │                     │  ingest + NLP    │                │  DB2: analyses/              │
+│  Three.js reef  │                     │  ingest + NLP    │                │  DB2: analyses/              │
 └─────────────────┘                     └──────────────────┘                └──────────────────────────────┘
 ```
 
@@ -18,7 +18,7 @@ Coralytics is a React + Three.js web app with a Python/FastAPI analysis backend.
 |---|---|---|
 | Frontend | React 19, Vite, React Router, Three.js | `cd frontend && npm run dev` |
 | Backend | Python 3, FastAPI, firebase-admin | `cd backend && uvicorn app.main:app --reload` |
-| Data | Firestore (+ local emulator) | `npm run firebase:emulators` (repo root) |
+| Data | Firestore + Storage (local emulators) | `npm run firebase:emulators` (repo root) |
 | Tooling | Firebase CLI (repo root `package.json`) | `npm install` at repo root |
 
 The backend is **Python** — there is no `npm run dev` in `backend/`. Use a Python virtual environment (`.venv`) and `uvicorn`.
@@ -27,16 +27,16 @@ The backend is **Python** — there is no `npm run dev` in `backend/`. Use a Pyt
 
 | Path | Purpose |
 |---|---|
-| `frontend/` | Vite React app — dashboard, upload flow, 3D coral visualiser |
-| `frontend/src/pages/` | Routes: Landing, Coral, Insights, Share, Settings |
+| `frontend/` | Vite React app — landing, upload flow, reef dashboard, insights |
+| `frontend/src/pages/` | Routes: Landing, Upload, Dashboard, Insights, Login, Recruiter view |
 | `frontend/src/api/` | Typed API client (`fetch` → FastAPI) |
-| `frontend/src/three/` | Procedural organism generators (`coralV1`–`v3`) |
-| `backend/` | FastAPI service — ingestion, Firestore persistence, analysis stubs |
+| `frontend/src/three/` | Procedural reef generators (`coralV1`–`v4`), environment, highlights |
+| `backend/` | FastAPI service — ingestion, Firestore/Storage persistence, NLP analysis |
 | `backend/app/ingestion/` | Export parsers (Instagram, LinkedIn, Reddit, generic) |
 | `backend/app/ingestion/sample_data/` | Bundled demo exports used by the seed script |
 | `test/` | Postman collection, fixtures, data-model diagram |
-| `firebase.json` | Firestore, Hosting, and emulator configuration |
-| `firestore.rules` | User-scoped security rules (enforced when Firebase Auth is wired up) |
+| `firebase.json` | Firestore, Storage, Hosting, and emulator configuration |
+| `firestore.rules` / `storage.rules` | Security rules (enforced when Firebase Auth is wired up) |
 | `.env` | Shared config for frontend (`VITE_*`) and backend (repo root) |
 
 ## Data storage
@@ -60,9 +60,8 @@ Schema diagram: [`test/coralytics_data_model.mmd`](test/coralytics_data_model.mm
 Migrate existing v1 uploads (dry-run first):
 
 ```bash
-cd backend
-python -m app.migrate --dry-run
-python -m app.migrate --apply --batch-size 25
+npm run migrate:dry-run
+npm run migrate:apply
 ```
 
 The FastAPI backend writes via the **Firebase Admin SDK** and bypasses client security rules. Direct client writes to uploads/analyses/shares/usernames are denied.
@@ -86,30 +85,31 @@ java -version        # must be 21+
 
 ## Quick start (local)
 
-You need **three long-running terminals**: Firestore emulator, backend API, and frontend dev server. Run the seed command once in a fourth terminal only when you need sample data.
+You need **three long-running terminals** (emulators, backend, frontend). Run the seed command once when you need sample data.
 
 ### 0. One-time setup
 
 ```bash
-cp .env.example .env
 npm install                    # repo root — Firebase CLI
-cd frontend && npm install     # frontend deps
+cd frontend && npm install
 cd ../backend
-py -3 -m venv .venv            # Windows (use python3 on macOS/Linux)
-.venv\Scripts\activate         # Windows: .venv\Scripts\activate
-# source .venv/bin/activate    # macOS / Linux
+python3 -m venv .venv          # py -3 on Windows
+source .venv/bin/activate      # .venv\Scripts\activate on Windows
 pip install -r requirements.txt
 ```
 
-The backend and frontend both read the repo-root `.env` file:
+Create a repo-root `.env` (frontend and backend both read it):
 
 ```env
 FIREBASE_PROJECT_ID=coralytics-c8767
 FIRESTORE_EMULATOR_HOST=localhost:8080
+FIREBASE_STORAGE_EMULATOR_HOST=localhost:9199
+FIREBASE_AUTH_EMULATOR_HOST=localhost:9099
 CORS_ORIGINS=http://localhost:5173
+VITE_USE_AUTH_EMULATOR=true
 ```
 
-`FIREBASE_PROJECT_ID` should match `.firebaserc`. `FIRESTORE_EMULATOR_HOST` tells the backend to write to your local Firestore emulator instead of cloud Firestore.
+`FIREBASE_PROJECT_ID` should match `.firebaserc`. Emulator host variables route the backend to local Firestore, Storage, and Auth instead of cloud.
 
 ### Terminal 1 — Firebase emulators (repo root)
 
@@ -117,10 +117,14 @@ CORS_ORIGINS=http://localhost:5173
 npm run firebase:emulators
 ```
 
-- Emulator UI: http://localhost:4000
-- Firestore listens on `localhost:8080`
-- Auth listens on `localhost:9099` (required for sign up / sign in)
-- Local data is stored in the emulator, not Google Cloud. If the emulator is reset, run the seed command again.
+| Service | URL / port |
+|---|---|
+| Emulator UI | http://localhost:4000 |
+| Firestore | `localhost:8080` |
+| Auth | `localhost:9099` |
+| Storage | `localhost:9199` |
+
+Local data lives in the emulators, not Google Cloud. If you reset them, run `npm run seed` again.
 
 > **Requires JDK 21+.** If you see `firebase-tools no longer supports Java version before 21`, install a newer JDK from [Adoptium](https://adoptium.net/) and verify with `java -version`.
 
@@ -128,26 +132,14 @@ npm run firebase:emulators
 
 ```bash
 cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+source .venv/bin/activate      # .venv\Scripts\activate on Windows
 uvicorn app.main:app --reload
 ```
 
 - API: http://localhost:8000
-- Health check: http://localhost:8000/health → `{"status":"ok","use_emulators":true,...}`
+- Health: http://localhost:8000/health → `{"status":"ok","use_emulators":true,...}`
 
-### Terminal 3 — seed demo data (once per fresh emulator)
-
-```bash
-npm run seed
-```
-
-Loads all files in `backend/app/ingestion/sample_data/`, saves normalized posts to Firestore, runs the analysis pipeline, and creates persisted coral data for `demo-user`.
-
-View in Emulator UI: http://localhost:4000 → `users` → `demo-user`
-
-### Terminal 4 — frontend
+### Terminal 3 — frontend
 
 ```bash
 cd frontend
@@ -157,15 +149,17 @@ npm run dev
 - App: http://localhost:5173
 - API calls go to `/api/*` → Vite proxies to `http://localhost:8000`
 
+### Seed demo data (once per fresh emulator)
+
+```bash
+npm run seed
+```
+
+Loads all files in `backend/app/ingestion/sample_data/`, saves normalized posts to Firestore, runs the analysis pipeline, and creates persisted reef data for `demo-user`.
+
+View in Emulator UI: http://localhost:4000 → `users` → `demo-user` → `raw_uploads` / `analyses`
+
 A service account key is **not** required for emulator-only work.
-
-### Local run order
-
-1. Start Firestore emulator: `npm run firebase:emulators`
-2. Start backend: `cd backend && uvicorn app.main:app --reload`
-3. Start frontend: `cd frontend && npm run dev`
-4. Seed once if needed: `npm run seed`
-5. Open http://localhost:5173
 
 ## Frontend
 
@@ -173,18 +167,19 @@ The React app reads from the shared `.env` at the repo root (`VITE_*` variables)
 
 ### Routes
 
-| Route | Page |
-|---|---|
-| `/` | Redirects to `/coral` (signed in) or `/about` (signed out) |
-| `/about` | Product overview for guests; how-it-works guide for signed-in users (via profile menu) |
-| `/login` | Sign in / sign up (Firebase Auth) |
-| `/coral` | My Coral — 3D coral, metrics, import modal, branch click, PNG export |
-| `/insights` | Topics, sentiment, red flags, branding, platform comparison, evolution |
-| `/share` | Recruiter share link, JSON export, compare analyses |
-| `/settings` | Privacy controls (also via profile menu) |
-| `/view/:token` | Public recruiter read-only coral preview |
+| Route | Page | Auth |
+|---|---|---|
+| `/` | Landing — product overview and how-it-works | Public (signed-in users see a personalized hero) |
+| `/login` | Sign in / sign up (Firebase Auth) | Public |
+| `/upload` | Export upload, platform confirmation, run history | Required |
+| `/dashboard` | Reef — 3D visualization, run/source filters, topic & post callouts, PNG export, reef theme | Required |
+| `/insights` | Topics, sentiment, red flags, branding, platform comparison, evolution | Required |
+| `/styles` | Internal design-system reference | Required |
+| `/view/:token` | Public recruiter read-only reef preview | Public |
 
-Legacy redirects: `/upload` → `/coral?import=1`, `/dashboard` → `/coral`.
+Legacy redirects: `/coral`, `/organism`, `/share` → `/dashboard`; `/about`, `/profile`, `/settings` → `/`.
+
+Protected routes redirect to `/login` when signed out. Dashboard and Insights share a `?run=` query param to keep the selected analysis snapshot in sync.
 
 ### API integration
 
@@ -192,16 +187,15 @@ The frontend calls the FastAPI backend with Firebase ID tokens (`Authorization: 
 
 | Frontend feature | API endpoint |
 |---|---|
-| Export history sidebar | `GET /uploads/{user_id}` |
-| Coral metrics + 3D view | `GET /analyses/{user_id}` |
-| File upload | `POST /uploads` (multipart) |
+| Upload flow + run history | `POST /uploads`, `GET /uploads/{user_id}`, `PATCH /uploads/{user_id}/{upload_id}` |
+| Reef + insights data | `GET /analyses/{user_id}`, `GET /analyses/{user_id}/{analysis_id}` |
 | Analyze / re-analyze | `POST /analyze` |
 | Posts by topic (branch click) | `GET /uploads/{user_id}/posts/by-topic` |
-| Privacy settings | `GET/PUT /users/{user_id}/privacy-settings` |
-| Share link | `POST /shares` |
+| Reef theme (water/sand/rock) | `GET/PUT /users/{user_id}/reef-settings` |
 | Recruiter view | `GET /shares/{token}` (public) |
+| Username login | `POST /usernames/resolve-login` |
 
-Sign up via `/login` (Auth emulator on `localhost:9099` in local dev). `/upload`, `/dashboard`, and `/insights` require login and redirect to `/login` when signed out.
+Share creation and privacy settings APIs exist on the backend but do not yet have dedicated UI pages.
 
 ### Authentication (email, username, Google)
 
@@ -211,7 +205,7 @@ Sign up via `/login` (Auth emulator on `localhost:9099` in local dev). `/upload`
 | Username login | Enter username on login form (resolved to email via API) |
 | Google | **Continue with Google** on `/login` (sign-up tab requires a username first) |
 
-**Local Google sign-in:** set `VITE_USE_AUTH_EMULATOR=true` in `.env` and run `npm run firebase:emulators` (includes Auth on `localhost:9099`).
+**Local Google sign-in:** set `VITE_USE_AUTH_EMULATOR=true` in `.env` and run `npm run firebase:emulators`.
 
 **Cloud Google sign-in:**
 
@@ -242,6 +236,7 @@ npm run preview   # preview production build
 | `POST` | `/uploads/fixture` | Ingest one sample file from disk (**emulator only**) |
 | `GET` | `/uploads/{user_id}` | List upload metadata (`limit`, `cursor`) |
 | `GET` | `/uploads/{user_id}/{upload_id}` | Get a single upload record |
+| `PATCH` | `/uploads/{user_id}/{upload_id}` | Update confirmed platform (`instagram` / `linkedin` / `reddit`) |
 | `DELETE` | `/uploads/{user_id}/{upload_id}` | Recursively delete upload + storage |
 | `GET` | `/uploads/{user_id}/{upload_id}/posts` | List posts (paginated: `limit`, `cursor`) |
 | `POST` | `/analyze` | Run cumulative analysis and optionally persist |
@@ -251,6 +246,8 @@ npm run preview   # preview production build
 | `GET` | `/uploads/{user_id}/posts/by-topic` | List posts tagged with a topic |
 | `GET` | `/users/{user_id}/privacy-settings` | Get privacy settings |
 | `PUT` | `/users/{user_id}/privacy-settings` | Update privacy settings |
+| `GET` | `/users/{user_id}/reef-settings` | Get reef theme settings |
+| `PUT` | `/users/{user_id}/reef-settings` | Update reef theme settings |
 | `POST` | `/shares` | Create recruiter share link (auth required) |
 | `GET` | `/shares/{token}` | Public read-only share payload |
 | `POST` | `/shares/{token}/revoke` | Owner revoke share |
@@ -293,16 +290,19 @@ cd backend && python -m app.seed --cloud --user-id demo-user
 
 | Script | Description |
 |---|---|
-| `npm run firebase:emulators` | Start Firestore + Auth emulators |
-| `npm run firebase:emulators:all` | Start Firestore + Hosting + Auth emulators |
-| `npm run firebase:deploy:rules` | Deploy `firestore.rules` to cloud |
+| `npm run firebase:emulators` | Start Firestore + Auth + Storage emulators |
+| `npm run firebase:emulators:all` | Start Firestore + Hosting + Auth + Storage emulators |
+| `npm run firebase:deploy:rules` | Deploy Firestore rules and indexes to cloud |
 | `npm run firebase:deploy:hosting` | Deploy frontend build to Firebase Hosting |
 | `npm run seed` | Seed local emulator with sample data |
 | `npm run seed:cloud` | Seed cloud Firestore with sample data |
+| `npm run migrate:dry-run` | Preview v1 → v2 upload migration |
+| `npm run migrate:apply` | Apply v1 → v2 upload migration |
+| `npm run test:backend` | Run backend unit tests |
 
 ## Environment variables
 
-Copy `.env.example` → `.env` at the **repo root**.
+Create `.env` at the **repo root**.
 
 | Variable | Required | Description |
 |---|---|---|
@@ -331,12 +331,12 @@ Copy `.env.example` → `.env` at the **repo root**.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `ECONNREFUSED` on `/api/...` in Vite logs | Backend not running | Start uvicorn in `backend/` (see Terminal 2) |
-| `Internal Server Error` on uploads sidebar | Emulator down or backend can't reach Firestore | Start `npm run firebase:emulators`; restart uvicorn |
+| `ECONNREFUSED` on `/api/...` in Vite logs | Backend not running | Start uvicorn in `backend/` |
+| `Internal Server Error` on uploads | Emulator down or backend can't reach Firestore | Start `npm run firebase:emulators`; restart uvicorn |
 | `firebase-tools no longer supports Java version before 21` | Old Java installed | Install JDK 21+; verify `java -version` |
 | `uvicorn` not recognized | No venv or deps not installed | Create `.venv`, activate, `pip install -r requirements.txt` |
 | `npm run dev` fails in `backend/` | Backend is Python, not Node | Use `uvicorn app.main:app --reload` instead |
-| Empty coral / sample preview | Backend stub returns empty `organism_data.topics` | Expected until NLP is integrated; upload + analyze still works |
+| Empty reef after sign-in | No data or emulator was reset | Run `npm run seed`; upload exports on `/upload` |
 | Sidebar shows no uploads | Emulator was reset | Re-run `npm run seed` |
 
 **Verify the stack:**
@@ -376,7 +376,7 @@ Requires **JDK 21+** (see Prerequisites).
 npm run firebase:emulators
 ```
 
-Ensure `.env` includes `FIRESTORE_EMULATOR_HOST=localhost:8080`. No service account needed.
+Ensure `.env` includes `FIRESTORE_EMULATOR_HOST=localhost:8080` and `FIREBASE_STORAGE_EMULATOR_HOST=localhost:9199`. No service account needed.
 
 ### 4. Cloud Firestore
 
@@ -404,7 +404,7 @@ npm run firebase:deploy:rules
 npm run seed:cloud
 ```
 
-6. **Verify** — Console → `users` → `demo-user` → `uploads` / `analyses`
+6. **Verify** — Console → `users` → `demo-user` → `raw_uploads` / `analyses`
 7. **Invite teammate** — Project settings → Users and permissions → Add member
 
 To point the **running backend** at cloud (not just the seed script), comment out `FIRESTORE_EMULATOR_HOST` in `.env` and restart uvicorn.
@@ -434,20 +434,28 @@ cd .. && npm run firebase:deploy:hosting
 
 `test/fixtures/` contains sample files for manual `POST /uploads` file-upload tests in Postman.
 
-## Status / roadmap
+Backend unit tests:
 
-### Done
+```bash
+npm run test:backend
+```
 
-- Firestore persistence, ingestion pipeline, local emulator, cloud seed, security rules
-- Full Firebase Auth (email/password) with Auth emulator support
+## Status
+
+### Shipped
+
+- Firestore + Storage persistence, ingestion pipeline, local emulators, cloud seed, security rules
+- Full Firebase Auth (email/password, username login, Google) with Auth emulator support
 - NLP pipeline: VADER sentiment, TF-IDF topics, persona summary, sentiment timeline
 - Red flag detection, branding recommendations, platform comparison, persona evolution
-- Frontend dashboard with data-driven 3D coral, branch click-to-view-posts, PNG export
-- Upload flow with auto-analyze; Insights page with full NLP breakdown
-- Share page: JSON/PNG export, compare analyses, recruiter share links (`/view/:token`)
-- Privacy settings dashboard (`/settings`)
+- Upload page with platform confirmation, run history, and snapshot management
+- Reef dashboard: data-driven 3D visualization, run/source filters, topic/stem/post callouts, PNG export, customizable reef theme
+- Insights page with full NLP breakdown and run snapshot picker
+- Public recruiter preview at `/view/:token`
+- Internal style guide at `/styles`
 
 ### Deferred
 
 - Reddit OAuth live API (file upload ingestion remains)
+- Share-link creation UI and privacy settings dashboard (APIs ready)
 - AI persona insights (KIV)

@@ -152,6 +152,17 @@ export function reefThemeToApi(settings: ReefThemeSettings): ReefThemeSettingsAp
   };
 }
 
+export function reefThemesEqual(a: ReefThemeSettings, b: ReefThemeSettings): boolean {
+  return (
+    a.showRock === b.showRock &&
+    a.showFish === b.showFish &&
+    a.waterColor === b.waterColor &&
+    a.sandColor === b.sandColor &&
+    a.fishColor === b.fishColor &&
+    a.rockColor === b.rockColor
+  );
+}
+
 export function reefThemeKey(settings: ReefThemeSettings): string {
   return [
     settings.showRock,

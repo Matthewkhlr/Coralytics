@@ -6,8 +6,9 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
+import { RunSelect } from "@/components/RunSelect";
 import { CHIP_RADIUS, REEF_DROPDOWN, REEF_FIELD_SURFACE } from "@/lib/buttonStyles";
-import { formatPlatform, formatRunLabel } from "@/lib/format";
+import { formatPlatform } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type PlatformFilterOption = {
@@ -33,10 +34,6 @@ const REEF_SELECT_CONTENT = cn(
   "w-[var(--radix-select-trigger-width)] border border-foreground/20 p-1 shadow-none",
 );
 
-function formatRunOptionLabel(item: Analysis, runNumber: number): string {
-  return formatRunLabel(item, runNumber);
-}
-
 export function ReefSidebarField({
   label,
   children,
@@ -61,52 +58,17 @@ export function ReefSidebarDropdowns({
   platformOptions,
   className,
 }: ReefSidebarDropdownsProps) {
-  const runCount = analyses.length;
-  const showRunPicker = runCount > 0 && selectedAnalysisId;
-  const selectedRunIndex = analyses.findIndex((item) => item.analysis_id === selectedAnalysisId);
-  const isLatestRun = selectedRunIndex === 0;
-  const selectedRun = selectedRunIndex >= 0 ? analyses[selectedRunIndex] : null;
-  const selectedRunNumber =
-    selectedRunIndex >= 0 ? runCount - selectedRunIndex : runCount;
-  const selectedRunLabel = selectedRun
-    ? formatRunOptionLabel(selectedRun, selectedRunNumber)
-    : "Select run";
+  const showRunPicker = analyses.length > 0 && selectedAnalysisId;
 
   return (
     <div className={cn("space-y-4", className)}>
       {showRunPicker ? (
         <ReefSidebarField label="Run">
-          <Select value={selectedAnalysisId ?? undefined} onValueChange={onRunSelect}>
-            <SelectTrigger className={cn(REEF_DROPDOWN, "w-full")}>
-              <span className="flex min-w-0 flex-1 items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-left">{selectedRunLabel}</span>
-                {isLatestRun ? (
-                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.18em] text-coral">
-                    Latest
-                  </span>
-                ) : null}
-              </span>
-            </SelectTrigger>
-            <SelectContent position="popper" align="start" sideOffset={4} className={REEF_SELECT_CONTENT}>
-              {analyses.map((item, index) => {
-                const itemRunNumber = runCount - index;
-                const isLatest = index === 0;
-                const label = formatRunOptionLabel(item, itemRunNumber);
-                return (
-                  <SelectItem key={item.analysis_id} value={item.analysis_id} textValue={label}>
-                    <span className="flex w-full min-w-0 items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate">{label}</span>
-                      {isLatest ? (
-                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.18em] text-coral">
-                          Latest
-                        </span>
-                      ) : null}
-                    </span>
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
+          <RunSelect
+            analyses={analyses}
+            selectedAnalysisId={selectedAnalysisId}
+            onSelect={onRunSelect}
+          />
         </ReefSidebarField>
       ) : null}
 

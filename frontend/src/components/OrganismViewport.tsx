@@ -27,7 +27,6 @@ import {
 import { isOrganismEmpty } from "@/lib/organismData";
 import {
   DEFAULT_REEF_THEME,
-  reefThemeKey,
   type ReefThemeSettings,
 } from "@/lib/reefTheme";
 import { cn } from "@/lib/utils";
@@ -66,6 +65,8 @@ export type ScreenPoint = { x: number; y: number };
 export type OrganismViewportHandle = {
   exportPng: () => string | null;
   getPostScreenPosition: (postId: string) => ScreenPoint | null;
+  getTopicScreenPosition: (topicName: string) => ScreenPoint | null;
+  getTrunkScreenPosition: () => ScreenPoint | null;
 };
 
 function findPolyp(root: THREE.Object3D, postId: string): THREE.Object3D | null {
@@ -79,6 +80,66 @@ function findPolyp(root: THREE.Object3D, postId: string): THREE.Object3D | null 
   return found;
 }
 
+function projectWorldToScreen(
+  api: SceneApi,
+  host: HTMLDivElement,
+  worldPos: THREE.Vector3,
+): ScreenPoint {
+  const projected = worldPos.clone().project(api.camera);
+  const rect = host.getBoundingClientRect();
+  return {
+    x: (projected.x * 0.5 + 0.5) * rect.width + rect.left,
+    y: (-projected.y * 0.5 + 0.5) * rect.height + rect.top,
+  };
+}
+
+function findTopicPivot(root: THREE.Object3D, topicName: string): THREE.Object3D | null {
+  const target = topicName.toLowerCase();
+  let found: THREE.Object3D | null = null;
+  root.traverse((obj) => {
+    if (found) return;
+    if (
+      obj.userData?.coralRole === "topic" &&
+      String(obj.userData.topicName ?? "").toLowerCase() === target
+    ) {
+      found = obj;
+    }
+  });
+  return found;
+}
+
+function getTopicAnchorWorldPos(pivot: THREE.Object3D): THREE.Vector3 {
+  const spinePoints = pivot.userData.spinePoints as
+    | Array<{ position: THREE.Vector3 }>
+    | undefined;
+  if (spinePoints?.length) {
+    const anchor = spinePoints[Math.floor(spinePoints.length * 0.55)] ?? spinePoints[0];
+    const local = anchor.position.clone();
+    return pivot.localToWorld(local);
+  }
+
+  const box = new THREE.Box3().setFromObject(pivot);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  return center;
+}
+
+function getTrunkAnchorWorldPos(coral: THREE.Group): THREE.Vector3 | null {
+  const box = new THREE.Box3();
+  let hasTrunk = false;
+  coral.traverse((obj) => {
+    if (obj.userData?.coralRole !== "trunk") return;
+    if (!(obj as THREE.Mesh).isMesh) return;
+    box.expandByObject(obj);
+    hasTrunk = true;
+  });
+  if (!hasTrunk) return null;
+
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  return center;
+}
+
 function projectPostToScreen(
   api: SceneApi,
   host: HTMLDivElement,
@@ -89,13 +150,23 @@ function projectPostToScreen(
 
   const worldPos = new THREE.Vector3();
   polyp.getWorldPosition(worldPos);
-  const projected = worldPos.project(api.camera);
+  return projectWorldToScreen(api, host, worldPos);
+}
 
-  const rect = host.getBoundingClientRect();
-  return {
-    x: (projected.x * 0.5 + 0.5) * rect.width + rect.left,
-    y: (-projected.y * 0.5 + 0.5) * rect.height + rect.top,
-  };
+function projectTopicToScreen(
+  api: SceneApi,
+  host: HTMLDivElement,
+  topicName: string,
+): ScreenPoint | null {
+  const pivot = findTopicPivot(api.coral, topicName);
+  if (!pivot) return null;
+  return projectWorldToScreen(api, host, getTopicAnchorWorldPos(pivot));
+}
+
+function projectTrunkToScreen(api: SceneApi, host: HTMLDivElement): ScreenPoint | null {
+  const worldPos = getTrunkAnchorWorldPos(api.coral);
+  if (!worldPos) return null;
+  return projectWorldToScreen(api, host, worldPos);
 }
 
 type OrganismViewportProps = {
@@ -106,6 +177,7 @@ type OrganismViewportProps = {
   isLoading?: boolean;
   isEmpty?: boolean;
   onBranchClick?: (topicName: string) => void;
+  onTrunkClick?: () => void;
   onPostClick?: (topicName: string, postId: string, anchor: ScreenPoint) => void;
   onTopicHover?: (topicName: string | null) => void;
   /** Fired when the camera moves so post anchor lines can be recomputed. */
@@ -125,6 +197,7 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
       isLoading = false,
       isEmpty = false,
       onBranchClick,
+      onTrunkClick,
       onPostClick,
       onSceneChange,
       onTopicHover,
@@ -139,6 +212,7 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
     const tooltipRef = useRef<HTMLDivElement | null>(null);
     const onTopicHoverRef = useRef(onTopicHover);
     const onBranchClickRef = useRef(onBranchClick);
+    const onTrunkClickRef = useRef(onTrunkClick);
     const onPostClickRef = useRef(onPostClick);
     const onSceneChangeRef = useRef(onSceneChange);
     const cameraStateRef = useRef<{
@@ -149,12 +223,13 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
     const reefThemeRef = useRef(reefTheme);
     onTopicHoverRef.current = onTopicHover;
     onBranchClickRef.current = onBranchClick;
+    onTrunkClickRef.current = onTrunkClick;
     onPostClickRef.current = onPostClick;
     onSceneChangeRef.current = onSceneChange;
     reefThemeRef.current = reefTheme;
 
     const dataKey = getOrganismDataKey(data);
-    const themeKey = reefThemeKey(reefTheme);
+    const reefStructureKey = `${reefTheme.showRock}:${reefTheme.showFish}`;
     const showCoral = !isEmpty && dataSource !== "empty" && !isOrganismEmpty(data);
 
     useImperativeHandle(ref, () => ({
@@ -168,6 +243,18 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
         const host = hostRef.current;
         if (!api || !host) return null;
         return projectPostToScreen(api, host, postId);
+      },
+      getTopicScreenPosition: (topicName: string) => {
+        const api = sceneApiRef.current;
+        const host = hostRef.current;
+        if (!api || !host) return null;
+        return projectTopicToScreen(api, host, topicName);
+      },
+      getTrunkScreenPosition: () => {
+        const api = sceneApiRef.current;
+        const host = hostRef.current;
+        if (!api || !host) return null;
+        return projectTrunkToScreen(api, host);
       },
     }));
 
@@ -330,7 +417,9 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
         const target = pickTarget();
         setHoveredTarget(target);
         renderer.domElement.style.cursor =
-          target?.kind === "topic" || target?.kind === "polyp" ? "pointer" : "grab";
+          target?.kind === "topic" || target?.kind === "polyp" || target?.kind === "trunk"
+            ? "pointer"
+            : "grab";
       };
 
       const handlePointerLeave = () => {
@@ -353,10 +442,15 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
             x: event.clientX,
             y: event.clientY,
           });
+              return;
+            }
+        if (target?.kind === "trunk") {
+          onTrunkClickRef.current?.();
           return;
+          }
+        if (target?.kind === "topic") {
+          onBranchClickRef.current?.(target.name);
         }
-        const topicName = getTopicNameFromHoverTarget(target);
-        if (topicName) onBranchClickRef.current?.(topicName);
       };
 
       renderer.domElement.addEventListener("pointermove", handlePointerMove);
@@ -448,8 +542,9 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
       api.envHandle?.group.removeFromParent();
 
       const isDark = appearance === "dark";
-      applyReefSceneAtmosphere(api.scene, reefTheme, isDark);
-      const envHandle = createReefEnvironment(reefTheme, isDark);
+      const theme = reefThemeRef.current;
+      applyReefSceneAtmosphere(api.scene, theme, isDark);
+      const envHandle = createReefEnvironment(theme, isDark);
       api.scene.add(envHandle.group);
       api.envHandle = envHandle;
       api.updateEnvironment = envHandle.update;
@@ -462,7 +557,16 @@ export const OrganismViewport = forwardRef<OrganismViewportHandle, OrganismViewp
           api.updateEnvironment = null;
         }
       };
-    }, [themeKey, appearance, reefTheme]);
+    }, [reefStructureKey, appearance]);
+
+    useEffect(() => {
+      const api = sceneApiRef.current;
+      if (!api?.envHandle) return;
+
+      const isDark = appearance === "dark";
+      applyReefSceneAtmosphere(api.scene, reefTheme, isDark);
+      api.envHandle.applyTheme(reefTheme, isDark);
+    }, [reefTheme.waterColor, reefTheme.sandColor, reefTheme.rockColor, appearance]);
 
     useEffect(() => {
       const api = sceneApiRef.current;

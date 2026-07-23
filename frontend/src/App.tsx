@@ -9,6 +9,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { UploadPage } from "./pages/UploadPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { InsightsPage } from "./pages/InsightsPage";
+import { StyleGuidePage } from "./pages/StyleGuidePage";
 import { LoginPage } from "./pages/LoginPage";
 import { RecruiterViewPage } from "./pages/RecruiterViewPage";
 
@@ -29,6 +30,7 @@ export function App() {
                     <Route path="/upload" element={<UploadPage />} />
                     <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/insights" element={<InsightsPage />} />
+                    <Route path="/styles" element={<StyleGuidePage />} />
                   </Route>
                 </Route>
               </Route>
