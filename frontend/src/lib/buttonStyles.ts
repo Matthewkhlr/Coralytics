@@ -30,6 +30,9 @@ export const REEF_INSTRUCTION_BOX = `${CHIP_RADIUS} border border-foreground/20 
 export const EXHIBIT_PANEL =
   "rounded-none border border-foreground/20 bg-background/45 shadow-none backdrop-blur-[10px]";
 
+/** Inner tiles inside exhibit panels — no nested blur/border (avoids seam artifacts). */
+export const EXHIBIT_INSET = "rounded-none bg-background/20";
+
 export const UPLOAD_CARD = EXHIBIT_PANEL;
 
 /** File chips on upload steps 1–2 (dropzone file list + source sort). */

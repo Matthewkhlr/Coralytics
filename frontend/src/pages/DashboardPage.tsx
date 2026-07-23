@@ -15,11 +15,14 @@ import {
 } from "@/components/ReefSidebarDropdowns";
 import { ReefPostConnector, type ConnectorPoint } from "@/components/ReefPostConnector";
 import { SelectedPostCallout } from "@/components/SelectedPostCallout";
+import { SelectedStemCallout } from "@/components/SelectedStemCallout";
+import { SelectedTopicCallout } from "@/components/SelectedTopicCallout";
+import { Button } from "@/components/ui/button";
 import { OceanPageFrame, PageHeader, PageTitle } from "@/components/PageShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useReefTheme } from "@/hooks/useReefTheme";
 import { useSelectedAnalysis } from "@/hooks/useSelectedAnalysis";
-import { CHIP_RADIUS, EXHIBIT_PANEL } from "@/lib/buttonStyles";
+import { EXHIBIT_PANEL } from "@/lib/buttonStyles";
 import { ReefInstructionPanel } from "@/components/ReefInstructionPanel";
 import { formatPlatform } from "@/lib/format";
 import { organismDataForPlatform, resolveOrganismData } from "@/lib/organismData";
@@ -31,6 +34,11 @@ type ConnectorLayout = {
   to: ConnectorPoint;
   ring: ConnectorPoint;
 };
+
+type ReefSelection =
+  | { kind: "post"; postId: string }
+  | { kind: "topic"; name: string }
+  | { kind: "stem" };
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -58,7 +66,7 @@ export function DashboardPage() {
   );
 
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
-  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
+  const [reefSelection, setReefSelection] = useState<ReefSelection | null>(null);
   const [connectorLayout, setConnectorLayout] = useState<ConnectorLayout | null>(null);
 
   const baseOrganism = useMemo(
@@ -81,25 +89,31 @@ export function DashboardPage() {
   const topics = organismData.topics;
 
   const selectedPost = useMemo<PostInsight | null>(() => {
-    if (!highlightedPostId || !analysis?.post_insights?.length) return null;
+    if (reefSelection?.kind !== "post" || !analysis?.post_insights?.length) return null;
     const platformLower = platformFilter?.toLowerCase().trim();
     return (
       analysis.post_insights.find((post) => {
-        if (post.id !== highlightedPostId) return false;
+        if (post.id !== reefSelection.postId) return false;
         if (platformLower && (post.platform ?? "").toLowerCase() !== platformLower) {
           return false;
         }
         return true;
       }) ?? null
     );
-  }, [highlightedPostId, analysis?.post_insights, platformFilter]);
+  }, [reefSelection, analysis?.post_insights, platformFilter]);
 
   const selectedPostFlags = useMemo(() => {
-    if (!highlightedPostId) return [];
+    if (reefSelection?.kind !== "post") return [];
     return (
-      analysis?.red_flags?.flags?.filter((flag) => flag.post_id === highlightedPostId) ?? []
+      analysis?.red_flags?.flags?.filter((flag) => flag.post_id === reefSelection.postId) ?? []
     );
-  }, [highlightedPostId, analysis?.red_flags?.flags]);
+  }, [reefSelection, analysis?.red_flags?.flags]);
+
+  const selectedTopic = useMemo(() => {
+    if (reefSelection?.kind !== "topic") return null;
+    const target = reefSelection.name.toLowerCase();
+    return organismData.topics.find((topic) => topic.name.toLowerCase() === target) ?? null;
+  }, [reefSelection, organismData.topics]);
 
   const platformOptions = useMemo<PlatformFilterOption[]>(() => {
     const breakdown = (analysis?.platform_breakdown ?? []).filter(
@@ -133,26 +147,38 @@ export function DashboardPage() {
     organismData.topics.length === 0 &&
     (organismData.posts?.length ?? 0) === 0;
 
-  const clearSelectedPost = useCallback(() => {
-    setHighlightedPostId(null);
+  const clearReefSelection = useCallback(() => {
+    setReefSelection(null);
     setConnectorLayout(null);
   }, []);
 
-  const handleBranchClick = useCallback(() => {
-    clearSelectedPost();
-  }, [clearSelectedPost]);
+  const handleBranchClick = useCallback((topicName: string) => {
+    setReefSelection({ kind: "topic", name: topicName });
+  }, []);
+
+  const handleTrunkClick = useCallback(() => {
+    setReefSelection({ kind: "stem" });
+  }, []);
 
   const handlePostClick = useCallback((_topic: string, postId: string) => {
-    setHighlightedPostId(postId);
+    setReefSelection({ kind: "post", postId });
   }, []);
 
   const updateConnector = useCallback(() => {
-    if (!highlightedPostId || !gridRef.current || !reefRef.current || !calloutRef.current) {
+    if (!reefSelection || !gridRef.current || !reefRef.current || !calloutRef.current) {
       setConnectorLayout(null);
       return;
     }
 
-    const screenPos = viewportRef.current?.getPostScreenPosition(highlightedPostId);
+    let screenPos: ConnectorPoint | null = null;
+    if (reefSelection.kind === "post") {
+      screenPos = viewportRef.current?.getPostScreenPosition(reefSelection.postId) ?? null;
+    } else if (reefSelection.kind === "topic") {
+      screenPos = viewportRef.current?.getTopicScreenPosition(reefSelection.name) ?? null;
+    } else if (reefSelection.kind === "stem") {
+      screenPos = viewportRef.current?.getTrunkScreenPosition() ?? null;
+    }
+
     if (!screenPos) {
       setConnectorLayout(null);
       return;
@@ -177,7 +203,7 @@ export function DashboardPage() {
         y: screenPos.y - reef.top,
       },
     });
-  }, [highlightedPostId]);
+  }, [reefSelection]);
 
   useLayoutEffect(() => {
     updateConnector();
@@ -187,25 +213,25 @@ export function DashboardPage() {
       window.removeEventListener("resize", updateConnector);
       window.removeEventListener("scroll", updateConnector, true);
     };
-  }, [updateConnector, selectedPost, highlightedPostId]);
+  }, [updateConnector, selectedPost, selectedTopic, reefSelection]);
 
   useEffect(() => {
     setPlatformFilter(null);
-    clearSelectedPost();
-  }, [selectedAnalysisId, clearSelectedPost]);
+    clearReefSelection();
+  }, [selectedAnalysisId, clearReefSelection]);
 
   useEffect(() => {
-    clearSelectedPost();
-  }, [platformFilter, clearSelectedPost]);
+    clearReefSelection();
+  }, [platformFilter, clearReefSelection]);
 
   useEffect(() => {
-    if (!highlightedPostId) return;
+    if (!reefSelection) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") clearSelectedPost();
+      if (event.key === "Escape") clearReefSelection();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [highlightedPostId, clearSelectedPost]);
+  }, [reefSelection, clearReefSelection]);
 
   const handleSnapshotSelect = (analysisId: string) => {
     selectAnalysis(analysisId);
@@ -222,9 +248,10 @@ export function DashboardPage() {
       setCustomizeOpen(true);
       return;
     }
-    reefTheme.cancelDraft();
-    setCustomizeOpen(false);
-    setSidebarCover(null);
+    void reefTheme.commitDraft().finally(() => {
+      setCustomizeOpen(false);
+      setSidebarCover(null);
+    });
   };
 
   useLayoutEffect(() => {
@@ -295,17 +322,16 @@ export function DashboardPage() {
               ref={reefRef}
               className="relative h-[min(64vh,636px)] min-h-[436px] overflow-hidden border border-foreground/20 bg-background/25"
             >
-              <button
+              <Button
                 type="button"
-                className={cn(
-                  "absolute top-3 right-3 z-10 inline-flex size-9 items-center justify-center border border-foreground/25 bg-background/55 text-foreground/85 backdrop-blur-sm transition hover:border-foreground/45 hover:bg-background/75 hover:text-foreground",
-                  CHIP_RADIUS,
-                )}
-                aria-label="Customize reef"
+                variant="ghost"
+                size="icon"
+                className="absolute top-3 right-3 z-10 rounded-full bg-transparent text-muted-foreground/90 hover:bg-transparent hover:text-foreground"
+                aria-label="Customise reef"
                 onClick={handleCustomizeOpen}
               >
-                <Palette className="size-4" aria-hidden />
-              </button>
+                <Palette className="size-5" aria-hidden />
+              </Button>
               <OrganismViewport
                 ref={viewportRef}
                 data={organismData}
@@ -316,6 +342,7 @@ export function DashboardPage() {
                 isLoading={latestStatus === "loading" || analysisLoading}
                 isEmpty={showEmptyReef}
                 onBranchClick={handleBranchClick}
+                onTrunkClick={handleTrunkClick}
                 onPostClick={handlePostClick}
                 onSceneChange={updateConnector}
               />
@@ -352,15 +379,10 @@ export function DashboardPage() {
                 </p>
               ) : null}
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-3 text-xs">
-              <Legend sentiment="positive" label="Positive" />
-              <Legend sentiment="neutral" label="Neutral" />
-              <Legend sentiment="negative" label="Negative / Risky" />
-            </div>
           </div>
         </div>
 
-        <aside ref={sidebarRef} className="flex min-w-0 flex-col gap-4 lg:pl-2">
+        <aside ref={sidebarRef} className="flex min-w-0 flex-col gap-3 lg:pl-2">
           <div
             ref={dropdownPanelRef}
             className={cn(EXHIBIT_PANEL, "p-4 lg:sticky lg:top-24")}
@@ -381,19 +403,35 @@ export function DashboardPage() {
             ) : null}
           </div>
 
-          {highlightedPostId && analysisLoading ? (
+          {reefSelection?.kind === "post" && analysisLoading ? (
             <p className="text-sm text-muted-foreground">Loading post…</p>
-          ) : highlightedPostId && selectedPost ? (
+          ) : reefSelection?.kind === "post" && selectedPost ? (
             <SelectedPostCallout
               ref={calloutRef}
               post={selectedPost}
               flags={selectedPostFlags}
-              onClose={clearSelectedPost}
+              onClose={clearReefSelection}
             />
-          ) : highlightedPostId ? (
+          ) : reefSelection?.kind === "post" ? (
             <p className="text-sm text-muted-foreground">
               Could not find that post in the current run.
             </p>
+          ) : reefSelection?.kind === "topic" && selectedTopic ? (
+            <SelectedTopicCallout
+              ref={calloutRef}
+              topic={selectedTopic}
+              onClose={clearReefSelection}
+            />
+          ) : reefSelection?.kind === "topic" ? (
+            <p className="text-sm text-muted-foreground">
+              Could not find that topic in the current view.
+            </p>
+          ) : reefSelection?.kind === "stem" ? (
+            <SelectedStemCallout
+              ref={calloutRef}
+              organismData={organismData}
+              onClose={clearReefSelection}
+            />
           ) : null}
         </aside>
       </div>
@@ -406,38 +444,8 @@ export function DashboardPage() {
         coverRect={sidebarCover}
         onOpenChange={handleCustomizeOpenChange}
         onDraftChange={reefTheme.updateDraft}
-        onSave={reefTheme.saveDraft}
-        onCancel={reefTheme.cancelDraft}
         onReset={reefTheme.resetDraft}
       />
     </OceanPageFrame>
-  );
-}
-
-function Legend({
-  sentiment,
-  label,
-}: {
-  sentiment: "positive" | "neutral" | "negative";
-  label: string;
-}) {
-  const colorClass =
-    sentiment === "positive"
-      ? "text-sentiment-positive"
-      : sentiment === "neutral"
-        ? "text-sentiment-neutral"
-        : "text-sentiment-negative";
-  const swatchClass =
-    sentiment === "positive"
-      ? "bg-sentiment-positive"
-      : sentiment === "neutral"
-        ? "bg-sentiment-neutral"
-        : "bg-sentiment-negative";
-
-  return (
-    <span className={cn("flex items-center gap-1.5", colorClass)}>
-      <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", swatchClass)} />
-      {label}
-    </span>
   );
 }
