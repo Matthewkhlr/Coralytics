@@ -4,7 +4,7 @@ import type {
   OrganismPostType,
   OrganismTopic,
 } from "../three/organismTypes";
-import type { AnalysisDiff, PostInsight, PostSummary } from "../api/types";
+import type { AnalysisDiff, PostInsight } from "../api/types";
 
 export const SAMPLE_ORGANISM_DATA: OrganismData = {
   accountAgeDays: 0,
@@ -313,41 +313,6 @@ export function organismDataForPlatform(
   return buildOrganismFromInsights(base, filtered, topN);
 }
 
-/** All posts for a topic from the analysis snapshot (every upload in that run). */
-export function postsForTopic(
-  insights: PostInsight[] | undefined,
-  topic: string,
-  platform?: string | null,
-): PostSummary[] {
-  if (!insights?.length || !topic.trim()) return [];
-
-  const topicLower = topic.toLowerCase().trim();
-  const platformLower = platform?.toLowerCase().trim();
-
-  return insights
-    .filter((post) => {
-      if (isPastedSamplePlatform(post.platform)) return false;
-      if (platformLower && (post.platform ?? "").toLowerCase() !== platformLower) {
-        return false;
-      }
-      return (post.topics ?? []).some((name) => name.toLowerCase() === topicLower);
-    })
-    .map((post) => ({
-      id: post.id,
-      platform: post.platform,
-      content: post.content,
-      created_at: post.created_at,
-      sentiment_compound: post.sentiment_compound,
-      topics: post.topics,
-      post_type: post.post_type,
-    }))
-    .sort((a, b) => {
-      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return tb - ta;
-    });
-}
-
 export function formatAnalysisDiff(
   diff: AnalysisDiff | null | undefined,
 ): string | null {
@@ -366,15 +331,6 @@ export function formatAnalysisDiff(
   }
   if (!parts.length) return null;
   return parts.join(" · ");
-}
-
-export function formatDemoUserLabel(userId: string) {
-  if (userId === "demo-user") return "Demo User";
-  return userId
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 export function formatSentiment(value: number | null | undefined) {
@@ -413,10 +369,4 @@ export function getSentimentRatio(
   const pct = summary[pctKey];
   if (typeof pct === "number") return pct / 100;
   return null;
-}
-
-export function formatImpactStrength(postCount: number | null | undefined) {
-  if (!postCount || postCount <= 0) return "-";
-  const score = Math.min(100, Math.round(postCount * 4.5));
-  return `${score}%`;
 }

@@ -65,13 +65,6 @@ class Settings:
         return os.getenv("FIREBASE_STORAGE_EMULATOR_HOST") or os.getenv("STORAGE_EMULATOR_HOST")
 
     @property
-    def allow_seed_endpoint(self) -> bool:
-        """Allow POST /seed/sample-data (emulator by default, or SEED_ENDPOINT_ENABLED=1)."""
-        if self.use_emulators:
-            return True
-        return os.getenv("SEED_ENDPOINT_ENABLED", "").strip().lower() in {"1", "true", "yes"}
-
-    @property
     def auth_required(self) -> bool:
         return os.getenv("AUTH_DISABLED", "").strip().lower() not in {"1", "true", "yes"}
 

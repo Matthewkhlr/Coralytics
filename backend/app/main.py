@@ -1,7 +1,6 @@
 import os
 from contextlib import asynccontextmanager
 from hashlib import sha256
-from pathlib import Path
 from typing import Annotated, Any
 
 from dotenv import load_dotenv
@@ -19,7 +18,6 @@ from app.services import (
     ingestion_service,
     privacy_service,
     reef_settings_service,
-    seed_service,
     share_service,
     username_service,
 )
@@ -107,31 +105,6 @@ app.add_middleware(
 )
 
 AuthUser = Annotated[str, Depends(verify_firebase_token)]
-
-
-ALLOWED_FIXTURES = frozenset({"instagram_posts_1.json", "linkedin_shares.csv"})
-
-
-def _fixture_search_dirs() -> list[Path]:
-    backend_dir = Path(__file__).resolve().parent
-    repo_root = backend_dir.parent.parent
-    return [
-        backend_dir / "ingestion" / "sample_data",
-        repo_root / "test" / "fixtures",
-    ]
-
-
-def _resolve_fixture_path(fixture_name: str) -> Path:
-    safe_name = Path(fixture_name).name
-    if safe_name not in ALLOWED_FIXTURES:
-        raise HTTPException(status_code=400, detail=f"Unknown fixture: {fixture_name}")
-
-    for directory in _fixture_search_dirs():
-        candidate = directory / safe_name
-        if candidate.is_file():
-            return candidate
-
-    raise HTTPException(status_code=404, detail=f"Fixture not found: {safe_name}")
 
 
 def _parse_bool_form(value: bool | str | None, *, default: bool = True) -> bool:
@@ -296,56 +269,6 @@ async def upload_export(
         user_id,
         content,
         filename,
-        platform,
-        run_analysis=_parse_bool_form(run_analysis, default=True),
-    )
-
-
-@app.post("/seed/sample-data")
-async def seed_sample_data(
-    current_uid: AuthUser,
-    user_id: str = Form(default="demo-user"),
-    run_analysis: bool = Form(default=True),
-) -> dict[str, object]:
-    """Ingest all bundled sample exports and optionally run NLP analysis."""
-    if user_id != current_uid:
-        raise HTTPException(status_code=403, detail="User id does not match authenticated user")
-    if not settings.allow_seed_endpoint:
-        raise HTTPException(
-            status_code=403,
-            detail="Seed endpoint disabled. Use emulators, set SEED_ENDPOINT_ENABLED=1, or run: python -m app.seed",
-        )
-
-    try:
-        return seed_service.seed_sample_data(user_id, run_analysis=run_analysis)
-    except (FileNotFoundError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Seed failed: {exc}") from exc
-
-
-@app.post("/uploads/fixture")
-async def upload_fixture(
-    current_uid: AuthUser,
-    user_id: str = Form(...),
-    fixture_name: str = Form("instagram_posts_1.json"),
-    platform: str | None = Form(default=None),
-    run_analysis: bool | str = Form(default=True),
-) -> dict[str, object]:
-    """Ingest a bundled sample export from disk. Allowed only when using Firebase emulators."""
-    if user_id != current_uid:
-        raise HTTPException(status_code=403, detail="User id does not match authenticated user")
-    if not settings.use_emulators:
-        raise HTTPException(
-            status_code=403,
-            detail="Fixture uploads are only allowed when FIRESTORE_EMULATOR_HOST is set",
-        )
-
-    fixture_path = _resolve_fixture_path(fixture_name)
-    return _ingest_and_save_upload(
-        user_id,
-        fixture_path.read_bytes(),
-        fixture_path.name,
         platform,
         run_analysis=_parse_bool_form(run_analysis, default=True),
     )

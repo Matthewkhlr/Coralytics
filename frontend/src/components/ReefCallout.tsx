@@ -54,15 +54,6 @@ export const ReefCalloutShell = forwardRef<HTMLDivElement, ReefCalloutShellProps
   },
 );
 
-export function ReefCalloutContent({ children }: { children: ReactNode }) {
-  return (
-    <div className="reef-post-callout__text-block">
-      <p className="reef-post-callout__field-label">Content</p>
-      <div className="reef-post-callout__text">{children}</div>
-    </div>
-  );
-}
-
 export function CalloutField({
   icon: Icon,
   label,

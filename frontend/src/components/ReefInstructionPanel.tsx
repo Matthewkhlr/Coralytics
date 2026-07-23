@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 const MEANING_ROWS: { key: string; label: string }[] = [
-  { key: "stem", label: "Stem = Account history" },
+  { key: "stem", label: "Stem = Account History" },
   { key: "branch", label: "Branch = Topic" },
   { key: "thickness", label: "Thickness = Volume" },
   { key: "beads", label: "Beads = Data (click to open)" },

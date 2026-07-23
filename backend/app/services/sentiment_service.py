@@ -122,7 +122,7 @@ def summarize_sentiment(scored_posts: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # Quick manual sanity check — mirrors `python -m app.ingestion.demo`
+    # Quick manual sanity check when running this module directly.
     # for the ingestion side. Run with: python sentiment_service.py
     sample_posts = [
         {"id": "instagram:post-0", "content": "Had an amazing day at the beach! #blessed"},

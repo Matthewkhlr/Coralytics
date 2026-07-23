@@ -27,23 +27,6 @@ export const REEF_PLATFORM_ICON_SRC: Partial<Record<PlatformSourceKey, string>> 
 
 export const REEF_STEM_ICON_LABEL = "Account history";
 
-/** Canonical topic labels — keep in sync with backend TOPIC_TAXONOMY + general. */
-export const ALL_ASSIGNABLE_TOPICS = [
-  "travel",
-  "technology",
-  "food",
-  "fitness",
-  "career",
-  "relationships",
-  "finance",
-  "entertainment",
-  "politics",
-  "education",
-  "sports",
-  "art",
-  "general",
-] as const;
-
 const TOPIC_LUCIDE_ICONS: Record<string, LucideIcon> = {
   travel: Plane,
   technology: Laptop,

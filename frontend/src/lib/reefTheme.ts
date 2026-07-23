@@ -162,14 +162,3 @@ export function reefThemesEqual(a: ReefThemeSettings, b: ReefThemeSettings): boo
     a.rockColor === b.rockColor
   );
 }
-
-export function reefThemeKey(settings: ReefThemeSettings): string {
-  return [
-    settings.showRock,
-    settings.showFish,
-    settings.waterColor,
-    settings.sandColor,
-    settings.fishColor,
-    settings.rockColor,
-  ].join(":");
-}
